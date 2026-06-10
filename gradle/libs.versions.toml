@@ -1,0 +1,46 @@
+[versions]
+javaVersion = "17"
+kotlinJvmTarget = "17"
+kotlin = "2.2.20"
+agp = "9.1.1"
+libsignal = "0.94.4"
+coroutines = "1.10.2"
+wear-compose = "1.5.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+
+[libraries]
+libsignal-client = { module = "org.signal:libsignal-client", version.ref = "libsignal" }
+libsignal-android = { module = "org.signal:libsignal-android", version.ref = "libsignal" }
+square-okhttp3 = "com.squareup.okhttp3:okhttp:5.3.2"
+square-wire-runtime = "com.squareup.wire:wire-runtime:6.4.0"
+android-tools-desugar = "com.android.tools:desugar_jdk_libs:2.1.5"
+square-okio = "com.squareup.okio:okio:3.17.0"
+jackson-core = "com.fasterxml.jackson.core:jackson-databind:2.12.0"
+jackson-module-kotlin = "com.fasterxml.jackson.module:jackson-module-kotlin:2.12.0"
+google-libphonenumber = "com.googlecode.libphonenumber:libphonenumber:9.0.29"
+google-jsr305 = "com.google.code.findbugs:jsr305:3.0.2"
+rxjava3-rxjava = "io.reactivex.rxjava3:rxjava:3.1.12"
+rxjava3-rxkotlin = "io.reactivex.rxjava3:rxkotlin:3.0.1"
+kotlin-stdlib-jdk8 = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-core-jvm = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines" }
+kotlinx-serialization-json = "org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0"
+
+# app
+androidx-activity-compose = "androidx.activity:activity-compose:1.10.1"
+androidx-lifecycle-viewmodel-compose = "androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4"
+androidx-core-ktx = "androidx.core:core-ktx:1.16.0"
+wear-compose-material = { module = "androidx.wear.compose:compose-material", version.ref = "wear-compose" }
+wear-compose-foundation = { module = "androidx.wear.compose:compose-foundation", version.ref = "wear-compose" }
+wear-compose-navigation = { module = "androidx.wear.compose:compose-navigation", version.ref = "wear-compose" }
+playservices-wearable = "com.google.android.gms:play-services-wearable:19.0.0"
+zxing-core = "com.google.zxing:core:3.5.3"
+work-runtime = "androidx.work:work-runtime-ktx:2.10.5"
