@@ -3,6 +3,17 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
+  id("com.squareup.wire")
+}
+
+wire {
+  kotlin {
+    javaInterop = true
+  }
+
+  sourcePath {
+    srcDir("src/main/protowire")
+  }
 }
 
 android {

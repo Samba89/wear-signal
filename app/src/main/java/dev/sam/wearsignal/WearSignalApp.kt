@@ -8,5 +8,6 @@ class WearSignalApp : Application() {
   override fun onCreate() {
     super.onCreate()
     Log.initialize(AndroidLogger())
+    AppDeps.init(this)
   }
 }
