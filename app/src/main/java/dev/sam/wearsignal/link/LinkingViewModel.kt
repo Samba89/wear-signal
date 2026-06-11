@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.signal.core.util.logging.Log
 import org.signal.libsignal.protocol.IdentityKeyPair
 import org.whispersystems.signalservice.api.provisioning.ProvisioningSocket
@@ -96,16 +95,19 @@ class LinkingViewModel : ViewModel() {
       if (result is SecondaryProvisioningCipher.ProvisioningDecryptResult.Success) {
         Log.i(TAG, "Provisioning message received on socket ${socket.id}")
         store.value = LinkState.Registering
+
+        // Registration must run on viewModelScope: shutdown() cancels the provisioning
+        // socket scope this block executes in, which would kill an inline registration.
+        viewModelScope.launch(Dispatchers.IO) {
+          val linkResult = LinkingRepository.completeLinking(result.message)
+
+          store.value = when (linkResult) {
+            is LinkingRepository.LinkResult.Success -> LinkState.Done
+            is LinkingRepository.LinkResult.Failure -> LinkState.Error(linkResult.message)
+          }
+        }
+
         shutdown()
-
-        val linkResult = withContext(Dispatchers.IO) {
-          LinkingRepository.completeLinking(result.message)
-        }
-
-        store.value = when (linkResult) {
-          is LinkingRepository.LinkResult.Success -> LinkState.Done
-          is LinkingRepository.LinkResult.Failure -> LinkState.Error(linkResult.message)
-        }
       } else {
         Log.w(TAG, "Provisioning decrypt failed on socket ${socket.id}")
         store.value = LinkState.Error("Could not decrypt provisioning message")
