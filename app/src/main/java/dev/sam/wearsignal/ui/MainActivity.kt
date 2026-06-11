@@ -20,6 +20,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.link.LinkingViewModel
+import dev.sam.wearsignal.poll.PollScheduler
 import dev.sam.wearsignal.poll.Poller
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,7 +50,9 @@ fun WearSignalNavHost() {
   SwipeDismissableNavHost(navController = navController, startDestination = startDestination) {
     composable("pairing") {
       val viewModel: LinkingViewModel = viewModel()
+      val context = androidx.compose.ui.platform.LocalContext.current
       PairingScreen(viewModel = viewModel) {
+        PollScheduler.scheduleNext(context)
         navController.navigate("status") {
           popUpTo("pairing") { inclusive = true }
         }
@@ -58,6 +61,7 @@ fun WearSignalNavHost() {
     composable("status") {
       var polling by remember { mutableStateOf(false) }
       StatusScreen(
+        polling = polling,
         onPollNow = {
           if (!polling) {
             polling = true

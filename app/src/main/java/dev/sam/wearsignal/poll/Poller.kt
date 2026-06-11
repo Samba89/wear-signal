@@ -1,6 +1,7 @@
 package dev.sam.wearsignal.poll
 
 import dev.sam.wearsignal.AppDeps
+import dev.sam.wearsignal.messages.ProfileNameResolver
 import org.signal.core.util.logging.Log
 
 /**
@@ -19,6 +20,12 @@ object Poller {
     }
 
     val newMessages = AppDeps.retriever.drainQueue()
+
+    if (newMessages.isNotEmpty()) {
+      // Resolve sender names (websocket reconnects briefly) before notifying.
+      ProfileNameResolver.resolvePending(newMessages.filterNot { it.fromSelf }.map { it.senderAci })
+      AppDeps.net.authWebSocket.disconnect()
+    }
 
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }

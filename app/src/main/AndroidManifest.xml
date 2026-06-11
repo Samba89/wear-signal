@@ -25,6 +25,18 @@
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
 
+        <receiver
+            android:name=".poll.PollReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".poll.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
