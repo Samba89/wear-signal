@@ -28,7 +28,9 @@ android {
     versionName = "0.1"
 
     ndk {
-      abiFilters += listOf("arm64-v8a", "x86_64")
+      // armeabi-v7a: Pixel Watch (incl. Pixel Watch 4) runs a 32-bit ARM userspace.
+      // x86_64: emulator. arm64-v8a: 64-bit watches.
+      abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
     }
 
     // Production Signal service endpoints + keys, copied from Signal-Android v8.15.0 app/build.gradle.kts
@@ -88,6 +90,7 @@ dependencies {
   implementation(libs.wear.compose.material)
   implementation(libs.wear.compose.foundation)
   implementation(libs.wear.compose.navigation)
+  implementation(libs.wear.input)
   implementation(libs.playservices.wearable)
   implementation(libs.zxing.core)
   implementation(libs.work.runtime)

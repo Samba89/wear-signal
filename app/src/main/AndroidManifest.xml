@@ -32,6 +32,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".notify.ReplyReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".poll.BootReceiver"
             android:exported="false">
             <intent-filter>

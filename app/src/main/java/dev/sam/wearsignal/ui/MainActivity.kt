@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -18,8 +19,10 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import androidx.wear.input.RemoteInputIntentHelper
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.link.LinkingViewModel
+import dev.sam.wearsignal.messages.MessageSender
 import dev.sam.wearsignal.poll.PollScheduler
 import dev.sam.wearsignal.poll.Poller
 import kotlinx.coroutines.Dispatchers
@@ -76,10 +79,52 @@ fun WearSignalNavHost() {
     }
     composable("messages") {
       var messages by remember { mutableStateOf(listOf<MessageRow>()) }
-      LaunchedEffect(Unit) {
+      var refreshKey by remember { mutableIntStateOf(0) }
+      LaunchedEffect(refreshKey) {
         messages = withContext(Dispatchers.IO) { AppDeps.messages.recent() }
       }
-      MessagesScreen(messages = messages)
+      val onReply = rememberReplyLauncher(onSent = { refreshKey++ })
+      MessagesScreen(messages = messages, onReply = onReply)
     }
   }
 }
+
+/**
+ * Hosts the Wear OS native text-input (voice/keyboard/canned) and returns a callback that,
+ * given a 1:1 message, opens the input and sends the typed text as a reply.
+ */
+@Composable
+fun rememberReplyLauncher(onSent: () -> Unit): (MessageRow) -> Unit {
+  val scope = rememberCoroutineScope()
+  val pendingAci = remember { mutableStateOf<String?>(null) }
+
+  val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+    ActivityResultContracts.StartActivityForResult()
+  ) { result ->
+    val aci = pendingAci.value
+    pendingAci.value = null
+    val text = result.data
+      ?.let { android.app.RemoteInput.getResultsFromIntent(it) }
+      ?.getCharSequence(REPLY_INPUT_KEY)
+      ?.toString()
+      ?.trim()
+    if (result.resultCode == android.app.Activity.RESULT_OK && aci != null && !text.isNullOrEmpty()) {
+      scope.launch {
+        withContext(Dispatchers.IO) { MessageSender.sendText(aci, text) }
+        onSent()
+      }
+    }
+  }
+
+  return { row ->
+    pendingAci.value = row.senderAci
+    val remoteInput = android.app.RemoteInput.Builder(REPLY_INPUT_KEY)
+      .setLabel("Reply to ${row.sender}")
+      .build()
+    val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
+    RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(remoteInput))
+    launcher.launch(intent)
+  }
+}
+
+private const val REPLY_INPUT_KEY = "reply_text"

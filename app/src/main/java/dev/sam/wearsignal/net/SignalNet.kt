@@ -3,10 +3,16 @@ package dev.sam.wearsignal.net
 import android.content.Context
 import dev.sam.wearsignal.BuildConfig
 import dev.sam.wearsignal.account.AccountStore
+import dev.sam.wearsignal.crypto.SessionLock
+import dev.sam.wearsignal.crypto.WatchDataStore
 import org.signal.core.util.UptimeSleepTimer
 import org.signal.libsignal.net.Network
+import org.signal.libsignal.protocol.SignalProtocolAddress
+import org.whispersystems.signalservice.api.SignalServiceMessageSender
 import org.whispersystems.signalservice.api.groupsv2.ClientZkOperations
 import org.whispersystems.signalservice.api.keys.KeysApi
+import org.whispersystems.signalservice.api.keys.PreKeyRepository
+import org.whispersystems.signalservice.api.message.MessageApi
 import org.whispersystems.signalservice.api.profiles.ProfileApi
 import org.signal.core.models.ServiceId.ACI
 import org.signal.core.models.ServiceId.PNI
@@ -28,6 +34,8 @@ import org.whispersystems.signalservice.internal.websocket.LibSignalChatConnecti
 import org.whispersystems.signalservice.internal.websocket.applyConfiguration
 import java.io.InputStream
 import java.util.Optional
+import java.util.concurrent.Executors
+import java.util.function.BooleanSupplier
 
 /**
  * Network singletons: service configuration, libsignal Network, websockets, and APIs.
@@ -110,6 +118,32 @@ class SignalNet(context: Context, private val account: AccountStore) {
       unauthWebSocket,
       authPushServiceSocket,
       ClientZkOperations.create(configuration).profileOperations
+    )
+  }
+
+  val messageApi: MessageApi by lazy { MessageApi(authWebSocket, unauthWebSocket) }
+
+  val messageSender: SignalServiceMessageSender by lazy {
+    val selfAddress = SignalProtocolAddress(account.aci!!.libSignalServiceId, account.deviceId)
+    val preKeyRepository = PreKeyRepository(
+      keysApi,
+      WatchDataStore.aci(),
+      selfAddress,
+      PreKeyRepository.BatchHelper { it.run() }
+    )
+
+    SignalServiceMessageSender(
+      authPushServiceSocket,
+      WatchDataStore,
+      SessionLock,
+      messageApi,
+      keysApi,
+      Optional.empty(),
+      Executors.newFixedThreadPool(4),
+      256 * 1024L,
+      10,
+      BooleanSupplier { false },
+      preKeyRepository
     )
   }
 

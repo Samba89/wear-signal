@@ -13,16 +13,21 @@ import androidx.wear.compose.material.Text
 
 data class MessageRow(
   val sender: String,
+  val senderAci: String,
   val body: String,
   val sentAt: Long,
-  val fromSelf: Boolean
-)
+  val fromSelf: Boolean,
+  val isGroup: Boolean
+) {
+  /** 1:1 replies only: can't reply to our own messages or to groups. */
+  val canReply: Boolean get() = !fromSelf && !isGroup
+}
 
 /**
- * Recent decrypted messages, newest first.
+ * Recent decrypted messages, newest first. Tapping a 1:1 (non-self) message opens a reply.
  */
 @Composable
-fun MessagesScreen(messages: List<MessageRow>) {
+fun MessagesScreen(messages: List<MessageRow>, onReply: (MessageRow) -> Unit) {
   if (messages.isEmpty()) {
     ScalingLazyColumn {
       item {
@@ -39,7 +44,7 @@ fun MessagesScreen(messages: List<MessageRow>) {
   ScalingLazyColumn {
     items(messages.size) { i ->
       val message = messages[i]
-      Card(onClick = {}) {
+      Card(onClick = { if (message.canReply) onReply(message) }) {
         Text(
           text = message.sender,
           style = MaterialTheme.typography.caption1,
@@ -50,6 +55,14 @@ fun MessagesScreen(messages: List<MessageRow>) {
           style = MaterialTheme.typography.body2,
           modifier = Modifier.padding(top = 2.dp)
         )
+        if (message.canReply) {
+          Text(
+            text = "Tap to reply",
+            style = MaterialTheme.typography.caption3,
+            color = MaterialTheme.colors.secondary,
+            modifier = Modifier.padding(top = 4.dp)
+          )
+        }
       }
     }
   }

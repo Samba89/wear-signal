@@ -51,9 +51,11 @@ class MessagesRepository(private val db: WatchDatabase) {
         }
         result += MessageRow(
           sender = if (isGroup) "$sender 👥" else sender,
+          senderAci = senderAci,
           body = cursor.getString(2),
           sentAt = cursor.getLong(3),
-          fromSelf = fromSelf
+          fromSelf = fromSelf,
+          isGroup = isGroup
         )
       }
     }
