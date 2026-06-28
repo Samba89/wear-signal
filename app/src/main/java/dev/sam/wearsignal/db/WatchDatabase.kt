@@ -8,9 +8,10 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 1) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 2) {
 
   override fun onCreate(db: SQLiteDatabase) {
+    createDirectoryTable(db)
     db.execSQL(
       """
       CREATE TABLE identities (
@@ -115,5 +116,22 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
     )
   }
 
-  override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+  override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+    if (oldVersion < 2) {
+      createDirectoryTable(db)
+    }
+  }
+
+  /** Discovered Signal contacts (phone number → ACI), cached from a CDSI lookup of the watch's contacts. */
+  private fun createDirectoryTable(db: SQLiteDatabase) {
+    db.execSQL(
+      """
+      CREATE TABLE directory (
+        e164 TEXT PRIMARY KEY,
+        aci TEXT NOT NULL,
+        name TEXT
+      )
+      """
+    )
+  }
 }

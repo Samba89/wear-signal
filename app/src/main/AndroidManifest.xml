@@ -12,6 +12,8 @@
     <!-- Auto-granted; lets the poll interval actually be 1/5/15 min without a special-access toggle. Personal sideloaded app, so Play policy doesn't apply. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Read the watch's synced contacts to offer them as message recipients (resolved to Signal accounts via CDSI). -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
 
     <application
         android:name=".WearSignalApp"

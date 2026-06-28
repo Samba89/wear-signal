@@ -1,7 +1,7 @@
 package dev.sam.wearsignal.messages
 
 import dev.sam.wearsignal.AppDeps
-import org.signal.core.models.ServiceId.ACI
+import org.signal.core.models.ServiceId
 import org.signal.core.util.logging.Log
 import org.whispersystems.signalservice.api.SignalServiceMessageSender.IndividualSendEvents
 import org.whispersystems.signalservice.api.crypto.ContentHint
@@ -21,10 +21,14 @@ object MessageSender {
     data class Failure(val message: String) : Result
   }
 
-  fun sendText(recipientAci: String, body: String): Result {
+  /**
+   * Sends to [recipient], a ServiceId string — either a bare-UUID ACI (replies, known contacts) or a
+   * "PNI:"-prefixed PNI (a contact discovered by number, whose ACI Signal won't reveal until first contact).
+   */
+  fun sendText(recipient: String, body: String): Result {
     if (!AppDeps.account.isLinked) return Result.Failure("Not linked")
 
-    val aci = ACI.parseOrNull(recipientAci) ?: return Result.Failure("Bad recipient")
+    val serviceId = ServiceId.parseOrNull(recipient) ?: return Result.Failure("Bad recipient")
     val now = System.currentTimeMillis()
     val message = SignalServiceDataMessage.Builder()
       .withTimestamp(now)
@@ -35,7 +39,7 @@ object MessageSender {
     return try {
       webSocket.connect()
       val result = AppDeps.net.messageSender.sendDataMessage(
-        SignalServiceAddress(aci),
+        SignalServiceAddress(serviceId),
         null, // authenticated send, no sealed sender
         ContentHint.RESENDABLE,
         message,
@@ -46,14 +50,14 @@ object MessageSender {
 
       if (result.isSuccess) {
         AppDeps.messages.insert(
-          senderAci = recipientAci,
+          senderAci = recipient,
           groupId = null,
           body = body,
           sentAt = now,
           serverAt = now,
           fromSelf = true
         )
-        Log.i(TAG, "Reply sent to ${recipientAci.take(8)}")
+        Log.i(TAG, "Message sent to ${recipient.take(12)}")
         Result.Success
       } else {
         Log.w(TAG, "Send unsuccessful: network=${result.isNetworkFailure} unregistered=${result.isUnregisteredFailure} identity=${result.identityFailure != null}")

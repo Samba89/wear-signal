@@ -75,6 +75,15 @@ class AccountStore(context: Context) {
     get() = prefs.getInt("poll_interval_minutes", 5)
     set(value) = prefs.edit { putInt("poll_interval_minutes", value) }
 
+  /**
+   * Whether to keep polling in the background on a recurring alarm. Off by default: in normal use
+   * the phone bridges Signal's notifications to the watch, so background polling is pure battery
+   * cost. Flip on (e.g. when the phone is dead) to use the watch as a standalone fallback.
+   */
+  var backgroundPollingEnabled: Boolean
+    get() = prefs.getBoolean("background_polling_enabled", false)
+    set(value) = prefs.edit { putBoolean("background_polling_enabled", value) }
+
   /** Debug override: pretend the phone is connected/disconnected. null = use real NodeClient state. */
   var phoneConnectedOverride: Boolean?
     get() = if (prefs.contains("phone_connected_override")) prefs.getBoolean("phone_connected_override", false) else null

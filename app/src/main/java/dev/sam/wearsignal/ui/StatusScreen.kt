@@ -28,11 +28,13 @@ import java.util.Date
 fun StatusScreen(
   polling: Boolean,
   onPollNow: () -> Unit,
-  onOpenMessages: () -> Unit
+  onOpenMessages: () -> Unit,
+  onNewMessage: () -> Unit
 ) {
   val context = LocalContext.current
   val account = AppDeps.account
   var intervalMinutes by remember { mutableIntStateOf(account.pollIntervalMinutes) }
+  var backgroundPolling by remember { mutableStateOf(account.backgroundPollingEnabled) }
   var override by remember { mutableStateOf(account.phoneConnectedOverride) }
 
   ScalingLazyColumn {
@@ -69,19 +71,42 @@ fun StatusScreen(
     }
     item {
       Chip(
-        label = { Text("Interval: $intervalMinutes min") },
+        label = { Text("New message") },
+        onClick = onNewMessage,
+        colors = ChipDefaults.primaryChipColors(),
+        modifier = Modifier.fillMaxWidth()
+      )
+    }
+    item {
+      Chip(
+        label = { Text(if (backgroundPolling) "Background: on" else "Background: off") },
+        secondaryLabel = { Text(if (backgroundPolling) "Polls every $intervalMinutes min" else "Manual only") },
         onClick = {
-          intervalMinutes = when (intervalMinutes) {
-            1 -> 5
-            5 -> 15
-            else -> 1
-          }
-          account.pollIntervalMinutes = intervalMinutes
-          PollScheduler.scheduleNext(context)
+          backgroundPolling = !backgroundPolling
+          account.backgroundPollingEnabled = backgroundPolling
+          PollScheduler.scheduleNext(context) // arms or cancels per the flag
         },
         colors = ChipDefaults.secondaryChipColors(),
         modifier = Modifier.fillMaxWidth()
       )
+    }
+    if (backgroundPolling) {
+      item {
+        Chip(
+          label = { Text("Interval: $intervalMinutes min") },
+          onClick = {
+            intervalMinutes = when (intervalMinutes) {
+              1 -> 5
+              5 -> 15
+              else -> 1
+            }
+            account.pollIntervalMinutes = intervalMinutes
+            PollScheduler.scheduleNext(context)
+          },
+          colors = ChipDefaults.secondaryChipColors(),
+          modifier = Modifier.fillMaxWidth()
+        )
+      }
     }
     item {
       // Debug helper while testing on the emulator: force the phone-connected state.

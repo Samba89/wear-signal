@@ -24,7 +24,10 @@ object PhoneConnectionMonitor {
     return try {
       withTimeoutOrNull(5_000) {
         val nodes = Wearable.getNodeClient(context).connectedNodes.await()
-        nodes.any { it.isNearby }
+        // Any connected node, not just isNearby: the phone bridges Signal's notifications to the
+        // watch over Bluetooth *or* Wi-Fi/cloud, but isNearby is true only for a direct BT link.
+        // Filtering on isNearby wrongly reported "phone away" on a Wi-Fi bridge → double notifications.
+        nodes.isNotEmpty()
       } ?: false
     } catch (t: Throwable) {
       Log.w(TAG, "Node lookup failed; assuming phone disconnected", t)

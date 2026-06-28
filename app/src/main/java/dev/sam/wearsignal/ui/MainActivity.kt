@@ -74,7 +74,8 @@ fun WearSignalNavHost() {
             }
           }
         },
-        onOpenMessages = { navController.navigate("messages") }
+        onOpenMessages = { navController.navigate("messages") },
+        onNewMessage = { navController.navigate("compose") }
       )
     }
     composable("messages") {
@@ -83,18 +84,23 @@ fun WearSignalNavHost() {
       LaunchedEffect(refreshKey) {
         messages = withContext(Dispatchers.IO) { AppDeps.messages.recent() }
       }
-      val onReply = rememberReplyLauncher(onSent = { refreshKey++ })
-      MessagesScreen(messages = messages, onReply = onReply)
+      val send = rememberSendLauncher(onSent = { refreshKey++ })
+      MessagesScreen(messages = messages, onReply = { row -> send(row.senderAci, row.sender) })
+    }
+    composable("compose") {
+      val send = rememberSendLauncher(onSent = { navController.popBackStack() })
+      ComposeScreen(onPick = { entry -> send(entry.serviceId, entry.name) })
     }
   }
 }
 
 /**
- * Hosts the Wear OS native text-input (voice/keyboard/canned) and returns a callback that,
- * given a 1:1 message, opens the input and sends the typed text as a reply.
+ * Hosts the Wear OS native text-input (voice/keyboard/canned) and returns a callback that, given a
+ * recipient ACI and a display label, opens the input and sends the typed text. Used for both
+ * replying to a received message and starting a new conversation.
  */
 @Composable
-fun rememberReplyLauncher(onSent: () -> Unit): (MessageRow) -> Unit {
+fun rememberSendLauncher(onSent: () -> Unit): (aci: String, label: String) -> Unit {
   val scope = rememberCoroutineScope()
   val pendingAci = remember { mutableStateOf<String?>(null) }
 
@@ -116,10 +122,10 @@ fun rememberReplyLauncher(onSent: () -> Unit): (MessageRow) -> Unit {
     }
   }
 
-  return { row ->
-    pendingAci.value = row.senderAci
+  return { aci, label ->
+    pendingAci.value = aci
     val remoteInput = android.app.RemoteInput.Builder(REPLY_INPUT_KEY)
-      .setLabel("Reply to ${row.sender}")
+      .setLabel("Message $label")
       .build()
     val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
     RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(remoteInput))
