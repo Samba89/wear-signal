@@ -25,8 +25,9 @@ AGPL-3.0-only, personal use.
 
 ## Build
 
-Requires JDK 17+ (configured to use Android Studio's JBR via `gradle.properties`)
-and an Android SDK at the path in `local.properties`.
+Requires JDK 17+ (e.g. Android Studio's bundled JBR — point `JAVA_HOME` at it, or set
+`org.gradle.java.home` in your own `~/.gradle/gradle.properties`) and an Android SDK
+configured via `local.properties`.
 
 ```
 ./gradlew :app:assembleDebug
