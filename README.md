@@ -1,5 +1,7 @@
 # wear-signal
 
+A vibe-coded Signal app I made for WearOS, so I can send a message to somebody without a phone. Tested on a Pixel Watch 4.
+
 A minimal, receive-only Signal client for Wear OS. It links to your existing Signal
 account as a **linked device** (like Signal Desktop) so an LTE watch can show message
 notifications while your phone stays at home.
