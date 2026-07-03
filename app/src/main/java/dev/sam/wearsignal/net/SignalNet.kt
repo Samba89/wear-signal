@@ -10,6 +10,8 @@ import org.signal.libsignal.net.Network
 import org.signal.libsignal.protocol.SignalProtocolAddress
 import org.whispersystems.signalservice.api.SignalServiceMessageSender
 import org.whispersystems.signalservice.api.groupsv2.ClientZkOperations
+import org.whispersystems.signalservice.api.groupsv2.GroupsV2Api
+import org.whispersystems.signalservice.api.groupsv2.GroupsV2Operations
 import org.whispersystems.signalservice.api.keys.KeysApi
 import org.whispersystems.signalservice.api.keys.PreKeyRepository
 import org.whispersystems.signalservice.api.message.MessageApi
@@ -110,7 +112,7 @@ class SignalNet(context: Context, private val account: AccountStore) {
 
   val cdsApi: CdsApi by lazy { CdsApi(authWebSocket) }
 
-  private val authPushServiceSocket: PushServiceSocket by lazy {
+  val authPushServiceSocket: PushServiceSocket by lazy {
     PushServiceSocket(configuration, credentialsProvider, BuildConfig.SIGNAL_AGENT, false)
   }
 
@@ -124,6 +126,12 @@ class SignalNet(context: Context, private val account: AccountStore) {
   }
 
   val messageApi: MessageApi by lazy { MessageApi(authWebSocket, unauthWebSocket) }
+
+  val groupsV2Operations: GroupsV2Operations by lazy {
+    GroupsV2Operations(ClientZkOperations.create(configuration), 1001) // max group size per Signal's default remote config
+  }
+
+  val groupsV2Api: GroupsV2Api by lazy { GroupsV2Api(authWebSocket, authPushServiceSocket, groupsV2Operations) }
 
   val messageSender: SignalServiceMessageSender by lazy {
     val selfAddress = SignalProtocolAddress(account.aci!!.libSignalServiceId, account.deviceId)

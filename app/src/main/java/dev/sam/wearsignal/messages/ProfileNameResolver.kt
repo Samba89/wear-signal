@@ -19,6 +19,18 @@ object ProfileNameResolver {
   private val TAG = Log.tag(ProfileNameResolver::class)
   private const val REFRESH_INTERVAL_MS = 7L * 24 * 60 * 60 * 1000
 
+  /** Contacts with a profile key whose avatar was never attempted (pre-avatar rows to backfill). */
+  fun pendingAvatarAcis(): List<String> {
+    val result = mutableListOf<String>()
+    AppDeps.database.readableDatabase.rawQuery(
+      "SELECT aci FROM contacts WHERE profile_key IS NOT NULL AND avatar_fetched_at = 0",
+      emptyArray()
+    ).use { cursor ->
+      while (cursor.moveToNext()) result += cursor.getString(0)
+    }
+    return result
+  }
+
   /**
    * Fetches names for any senders that have a profile key but no (or stale) cached name.
    * Call while the websocket is usable; never throws.
@@ -31,15 +43,17 @@ object ProfileNameResolver {
 
     for (aciString in senderAcis.distinct()) {
       try {
-        val (profileKeyBytes, fetchedAt) = db.readableDatabase.rawQuery(
-          "SELECT profile_key, fetched_at FROM contacts WHERE aci = ?",
+        val (profileKeyBytes, fetchedAt, avatarFetchedAt) = db.readableDatabase.rawQuery(
+          "SELECT profile_key, fetched_at, avatar_fetched_at FROM contacts WHERE aci = ?",
           arrayOf(aciString)
         ).use { cursor ->
           if (!cursor.moveToFirst() || cursor.isNull(0)) continue
-          cursor.getBlob(0) to cursor.getLong(1)
+          Triple(cursor.getBlob(0), cursor.getLong(1), cursor.getLong(2))
         }
 
-        if (now - fetchedAt < REFRESH_INTERVAL_MS) continue
+        // Refetch when the name is stale, or once to backfill the avatar for contacts
+        // resolved before avatars existed.
+        if (now - fetchedAt < REFRESH_INTERVAL_MS && avatarFetchedAt > 0) continue
 
         val aci = ACI.parseOrNull(aciString) ?: continue
         val profileKey = ProfileKey(profileKeyBytes)
@@ -60,7 +74,9 @@ object ProfileNameResolver {
         val values = ContentValues().apply {
           put("name", name?.replace('\u0000', ' ')?.trim())
           put("fetched_at", now)
+          put("avatar_fetched_at", now)
         }
+        AppDeps.avatars.update(aciString, profileKey, result.result.avatar)
         db.writableDatabase.update("contacts", values, "aci = ?", arrayOf(aciString))
         Log.i(TAG, "Resolved profile name for $aciString")
       } catch (t: Throwable) {

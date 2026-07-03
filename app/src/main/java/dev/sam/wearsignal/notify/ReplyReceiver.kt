@@ -13,7 +13,8 @@ import kotlinx.coroutines.launch
 import org.signal.core.util.logging.Log
 
 /**
- * Receives the text from a Wear notification reply and sends it as a 1:1 message.
+ * Receives the text from a Wear notification reply and sends it to the conversation
+ * (1:1 or group fan-out).
  */
 class ReplyReceiver : BroadcastReceiver() {
 
@@ -24,18 +25,19 @@ class ReplyReceiver : BroadcastReceiver() {
 
   override fun onReceive(context: Context, intent: Intent) {
     val replyText = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(NotificationPresenter.KEY_REPLY_TEXT)?.toString()
-    val recipientAci = intent.getStringExtra(NotificationPresenter.EXTRA_RECIPIENT_ACI)
+    val peer = intent.getStringExtra(NotificationPresenter.EXTRA_PEER)
+    val isGroup = intent.getBooleanExtra(NotificationPresenter.EXTRA_IS_GROUP, false)
     val notificationId = intent.getIntExtra(NotificationPresenter.EXTRA_NOTIFICATION_ID, -1)
 
-    if (replyText.isNullOrBlank() || recipientAci == null) {
-      Log.w(TAG, "Missing reply text or recipient; ignoring")
+    if (replyText.isNullOrBlank() || peer == null) {
+      Log.w(TAG, "Missing reply text or peer; ignoring")
       return
     }
 
     val pendingResult = goAsync()
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val result = MessageSender.sendText(recipientAci, replyText)
+        val result = MessageSender.send(peer, isGroup, replyText)
         updateNotification(context, notificationId, replyText, result)
       } finally {
         pendingResult.finish()

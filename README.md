@@ -2,9 +2,9 @@
 
 A vibe-coded Signal app I made for WearOS, so I can send a message to somebody without a phone. Tested on a Pixel Watch 4.
 
-A minimal, receive-only Signal client for Wear OS. It links to your existing Signal
-account as a **linked device** (like Signal Desktop) so an LTE watch can show message
-notifications while your phone stays at home.
+A compact Signal client for Wear OS. It links to your existing Signal account as a
+**linked device** (like Signal Desktop) so an LTE watch can read and reply to
+conversations — and optionally show notifications — while your phone stays at home.
 
 Built against vendored modules from [Signal-Android](https://github.com/signalapp/Signal-Android)
 v8.15.0 (`lib/libsignal-service`, `core/network`, `core/util-jvm`, `core/models-jvm`).
@@ -15,15 +15,27 @@ AGPL-3.0-only, personal use.
 - **Pairing**: shows a provisioning QR; scan it from phone Signal →
   Settings → Linked devices → Link new device. **Choose "Don't transfer messages"**
   if asked — the watch can't consume the history backup.
-- **Polling**: no push. When the phone is *not* connected to the watch, it polls the
-  message queue on an exact-alarm interval (1/5/15 min, default 5), decrypts, notifies,
+- **Conversations**: opens straight into the conversation list (10 at a time, "Load
+  more" for older) → chat-style thread view with left/right bubbles, last 100 messages
+  per conversation, populated from every drain (history starts at link time). Contact
+  and group photos are fetched and decrypted alongside names; anyone without a photo
+  gets a coloured monogram, and group messages are colour-coded per sender. Group
+  titles, member lists, and photos are fetched from the GroupsV2 server using master
+  keys harvested from message contexts.
+- **Sending**: reply in any thread or start a new 1:1 via the contact picker. Group
+  replies fan out pairwise to the cached member list with the groupV2 context. Sends
+  emit a sync transcript so phone Signal shows them too.
+- **Notifications toggle** (manual control): OFF (default) — no background polling; the
+  phone's own Signal notifications bridge to the watch. ON (phone dead/away) — the watch
+  polls the queue on an exact-alarm interval (1/5/15 min, default 5), decrypts, notifies,
   disconnects.
-- **No double notifications**: when the phone *is* connected (Bluetooth/Wi-Fi), the watch
-  never notifies — phone Signal's notifications bridge to the watch natively. A daily
-  silent drain keeps the queue short and refreshes the server's 45-day linked-device
-  inactivity deadline.
-- **Recent messages**: last 50 decrypted messages in a scrollable list.
-- Receive-only: no sending, no read receipts, no typing indicators.
+- **Charge-time maintenance**: a daily WorkManager job that only runs while charging
+  drains the queue silently (keeps conversations current and refreshes the server's
+  45-day linked-device inactivity deadline) and runs prekey upkeep — regardless of the
+  toggle, with zero wearing-time battery cost.
+- **Manual poll**: "Check for messages" in the conversation list / "Poll now" on the
+  status screen, silent.
+- No read receipts, no typing indicators, text only (no attachments).
 
 ## Build
 
@@ -50,7 +62,11 @@ The Status screen has a debug chip to force the phone-connected state
 
 ## Notes
 
-- Prekey upkeep (top-up + 2-day signed/last-resort rotation) runs during the daily drain.
+- Prekey upkeep (top-up + 2-day signed/last-resort rotation) runs during the daily
+  charge-time maintenance job.
+- Group send requires the member list, which is fetched on the first poll that sees a
+  message from that group — so a brand-new group needs one incoming drain before you
+  can reply to it.
 - Unlinking: phone Signal → Linked devices → remove "Watch". Relink anytime (5-device limit).
 - Profile names are resolved via profile keys harvested from incoming messages, so the
   first message from a contact may show a truncated ACI until the fetch completes.

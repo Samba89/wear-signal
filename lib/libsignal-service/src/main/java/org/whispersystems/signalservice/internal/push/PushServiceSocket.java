@@ -572,6 +572,16 @@ public class PushServiceSocket {
     }
   }
 
+  public void retrieveGroupsV2ProfileAvatar(String path, File destination, long maxSizeBytes)
+      throws IOException
+  {
+    try {
+      downloadFromCdn(destination, 0, Collections.emptyMap(), path, maxSizeBytes, null);
+    } catch (MissingConfigurationException e) {
+      throw new AssertionError(e);
+    }
+  }
+
   /**
    * Only used to upload self profile avatar as part of writing the profile to the service.
    *

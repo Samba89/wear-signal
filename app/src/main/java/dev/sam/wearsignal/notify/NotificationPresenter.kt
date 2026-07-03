@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import dev.sam.wearsignal.messages.EnvelopeProcessor
+import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.ui.MainActivity
 import org.signal.core.util.logging.Log
 
@@ -23,7 +24,8 @@ class NotificationPresenter(private val context: Context) {
     private val TAG = Log.tag(NotificationPresenter::class)
     private const val CHANNEL_ID = "messages"
     const val KEY_REPLY_TEXT = "reply_text"
-    const val EXTRA_RECIPIENT_ACI = "recipient_aci"
+    const val EXTRA_PEER = "peer"
+    const val EXTRA_IS_GROUP = "is_group"
     const val EXTRA_NOTIFICATION_ID = "notification_id"
   }
 
@@ -53,7 +55,9 @@ class NotificationPresenter(private val context: Context) {
 
     messages.filterNot { it.fromSelf }.takeLast(5).forEachIndexed { index, message ->
       val sender = nameResolver(message.senderAci)
-      val title = if (message.groupId != null) "$sender (group)" else sender
+      val title = message.groupId
+        ?.let { groupId -> GroupStateResolver.cachedTitle(groupId)?.let { "$sender @ $it" } ?: "$sender (group)" }
+        ?: sender
       val notificationId = (message.sentAt % Int.MAX_VALUE).toInt() + index
       val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_email)
@@ -65,23 +69,22 @@ class NotificationPresenter(private val context: Context) {
         .setCategory(NotificationCompat.CATEGORY_MESSAGE)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
 
-      // 1:1 only: Wear's native reply (voice/keyboard/canned) via RemoteInput.
-      if (message.groupId == null) {
-        builder.addAction(buildReplyAction(message.senderAci, notificationId))
-      }
+      // Wear's native reply (voice/keyboard/canned) via RemoteInput; groups fan out on send.
+      builder.addAction(buildReplyAction(message.peer, message.groupId != null, notificationId))
 
       manager.notify(notificationId, builder.build())
     }
   }
 
-  private fun buildReplyAction(recipientAci: String, notificationId: Int): NotificationCompat.Action {
+  private fun buildReplyAction(peer: String, isGroup: Boolean, notificationId: Int): NotificationCompat.Action {
     val remoteInput = RemoteInput.Builder(KEY_REPLY_TEXT)
       .setLabel("Reply")
       .setAllowFreeFormInput(true)
       .build()
 
     val intent = Intent(context, ReplyReceiver::class.java).apply {
-      putExtra(EXTRA_RECIPIENT_ACI, recipientAci)
+      putExtra(EXTRA_PEER, peer)
+      putExtra(EXTRA_IS_GROUP, isGroup)
       putExtra(EXTRA_NOTIFICATION_ID, notificationId)
     }
     val pendingIntent = PendingIntent.getBroadcast(

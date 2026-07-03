@@ -44,6 +44,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
   )
 
   data class IncomingMessage(
+    /** Conversation key: group id for groups, the other party's ACI for 1:1. */
+    val peer: String,
     val senderAci: String,
     val groupId: String?,
     val body: String,
@@ -101,9 +103,11 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       if (body.isNullOrEmpty()) {
         return null
       }
+      val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
       return IncomingMessage(
+        peer = groupId ?: sourceServiceId.toString(),
         senderAci = sourceServiceId.toString(),
-        groupId = data.groupV2?.masterKey?.let { deriveGroupId(it.toByteArray()) },
+        groupId = groupId,
         body = body,
         sentAt = data.timestamp ?: envelope.clientTimestamp ?: serverDeliveredTimestamp,
         fromSelf = false
@@ -116,9 +120,17 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       if (body.isNullOrEmpty()) {
         return null
       }
+      val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+      val destination = ServiceId.parseOrNull(sent.destinationServiceId, null)?.toString()
+      val peer = groupId ?: destination
+      if (peer == null) {
+        Log.w(TAG, "Sent transcript with no group or destination; dropping")
+        return null
+      }
       return IncomingMessage(
+        peer = peer,
         senderAci = selfAci.toString(),
-        groupId = data.groupV2?.masterKey?.let { deriveGroupId(it.toByteArray()) },
+        groupId = groupId,
         body = body,
         sentAt = sent.timestamp ?: serverDeliveredTimestamp,
         fromSelf = true
@@ -131,6 +143,7 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
   /** Store an IncomingMessage and return whether it should notify (own sent messages shouldn't). */
   fun store(message: IncomingMessage) {
     messages.insert(
+      peer = message.peer,
       senderAci = message.senderAci,
       groupId = message.groupId,
       body = message.body,
@@ -154,8 +167,25 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     }
   }
 
-  private fun deriveGroupId(masterKey: ByteArray): String {
+  /**
+   * Derives the group id and upserts the master key + latest revision into the groups table,
+   * so GroupStateResolver can later fetch the title and member list.
+   */
+  private fun recordGroup(masterKey: ByteArray, revision: Int): String {
     val secretParams = GroupSecretParams.deriveFromMasterKey(GroupMasterKey(masterKey))
-    return Base64.encodeWithPadding(secretParams.publicParams.groupIdentifier.serialize())
+    val groupId = Base64.encodeWithPadding(secretParams.publicParams.groupIdentifier.serialize())
+
+    val db = AppDeps.database.writableDatabase
+    val values = android.content.ContentValues().apply {
+      put("group_id", groupId)
+      put("master_key", masterKey)
+    }
+    val inserted = db.insertWithOnConflict("groups", null, values, android.database.sqlite.SQLiteDatabase.CONFLICT_IGNORE)
+    if (inserted == -1L) {
+      db.execSQL("UPDATE groups SET revision = MAX(revision, ?) WHERE group_id = ?", arrayOf(revision, groupId))
+    } else {
+      db.execSQL("UPDATE groups SET revision = ? WHERE group_id = ?", arrayOf(revision, groupId))
+    }
+    return groupId
   }
 }

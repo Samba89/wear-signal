@@ -8,10 +8,11 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 2) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 4) {
 
   override fun onCreate(db: SQLiteDatabase) {
     createDirectoryTable(db)
+    createGroupsTable(db)
     db.execSQL(
       """
       CREATE TABLE identities (
@@ -95,6 +96,7 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
       """
       CREATE TABLE messages (
         _id INTEGER PRIMARY KEY AUTOINCREMENT,
+        peer TEXT NOT NULL,
         sender_aci TEXT NOT NULL,
         group_id TEXT,
         body TEXT NOT NULL,
@@ -110,7 +112,8 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         aci TEXT PRIMARY KEY,
         profile_key BLOB,
         name TEXT,
-        fetched_at INTEGER NOT NULL DEFAULT 0
+        fetched_at INTEGER NOT NULL DEFAULT 0,
+        avatar_fetched_at INTEGER NOT NULL DEFAULT 0
       )
       """
     )
@@ -120,6 +123,38 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
     if (oldVersion < 2) {
       createDirectoryTable(db)
     }
+    if (oldVersion < 3) {
+      createGroupsTable(db)
+      // Conversation key: group id for groups, the other party's ACI for 1:1. Legacy rows
+      // stored the recipient in sender_aci for watch-sent messages, so COALESCE covers both
+      // directions; phone-synced self messages (sender_aci = own ACI) end up in a stale
+      // self-keyed conversation that prunes out naturally.
+      db.execSQL("ALTER TABLE messages ADD COLUMN peer TEXT NOT NULL DEFAULT ''")
+      db.execSQL("UPDATE messages SET peer = COALESCE(group_id, sender_aci)")
+    }
+    if (oldVersion < 4) {
+      // Avatar fetches are tracked separately from name/state fetches so contacts and
+      // groups that are already "fresh" still get their photo backfilled once.
+      db.execSQL("ALTER TABLE contacts ADD COLUMN avatar_fetched_at INTEGER NOT NULL DEFAULT 0")
+      db.execSQL("ALTER TABLE groups ADD COLUMN avatar_fetched_at INTEGER NOT NULL DEFAULT 0")
+    }
+  }
+
+  /** GroupsV2 state cache: master key harvested from message contexts, title/members fetched from the group server. */
+  private fun createGroupsTable(db: SQLiteDatabase) {
+    db.execSQL(
+      """
+      CREATE TABLE groups (
+        group_id TEXT PRIMARY KEY,
+        master_key BLOB NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 0,
+        title TEXT,
+        members TEXT,
+        fetched_at INTEGER NOT NULL DEFAULT 0,
+        avatar_fetched_at INTEGER NOT NULL DEFAULT 0
+      )
+      """
+    )
   }
 
   /** Discovered Signal contacts (phone number → ACI), cached from a CDSI lookup of the watch's contacts. */

@@ -1,6 +1,7 @@
 package dev.sam.wearsignal.poll
 
 import dev.sam.wearsignal.AppDeps
+import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.ProfileNameResolver
 import org.signal.core.util.logging.Log
 
@@ -21,11 +22,18 @@ object Poller {
 
     val newMessages = AppDeps.retriever.drainQueue()
 
-    if (newMessages.isNotEmpty()) {
-      // Resolve sender names (websocket reconnects briefly) before notifying.
-      ProfileNameResolver.resolvePending(newMessages.filterNot { it.fromSelf }.map { it.senderAci })
+    // Resolve names, group state, and photos for new senders, plus any contacts/groups
+    // still awaiting an avatar backfill (cheap no-op once everything is fetched).
+    val pendingAcis = newMessages.filterNot { it.fromSelf }.map { it.senderAci } + ProfileNameResolver.pendingAvatarAcis()
+    val pendingGroups = newMessages.mapNotNull { it.groupId } + GroupStateResolver.pendingAvatarGroupIds()
+    if (pendingAcis.isNotEmpty() || pendingGroups.isNotEmpty()) {
+      ProfileNameResolver.resolvePending(pendingAcis)
+      GroupStateResolver.resolvePending(pendingGroups)
       AppDeps.net.authWebSocket.disconnect()
     }
+
+    // Contacts without a Signal profile photo fall back to their synced address-book photo.
+    AppDeps.avatars.backfillDeviceContactPhotos()
 
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }

@@ -2,6 +2,7 @@ package dev.sam.wearsignal
 
 import android.content.Context
 import dev.sam.wearsignal.account.AccountStore
+import dev.sam.wearsignal.contacts.AvatarStore
 import dev.sam.wearsignal.crypto.WatchProtocolStore
 import dev.sam.wearsignal.db.WatchDatabase
 import dev.sam.wearsignal.messages.EnvelopeProcessor
@@ -29,4 +30,5 @@ object AppDeps {
   val messages: MessagesRepository by lazy { MessagesRepository(database) }
   val retriever: MessageRetriever by lazy { MessageRetriever(EnvelopeProcessor(messages)) }
   val notifier: NotificationPresenter by lazy { NotificationPresenter(appContext) }
+  val avatars: AvatarStore by lazy { AvatarStore(appContext) }
 }

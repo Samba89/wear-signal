@@ -22,7 +22,10 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import androidx.wear.input.RemoteInputIntentHelper
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.link.LinkingViewModel
+import dev.sam.wearsignal.messages.ConversationRow
+import dev.sam.wearsignal.messages.MessageRow
 import dev.sam.wearsignal.messages.MessageSender
+import dev.sam.wearsignal.poll.MaintenanceWorker
 import dev.sam.wearsignal.poll.PollScheduler
 import dev.sam.wearsignal.poll.Poller
 import kotlinx.coroutines.Dispatchers
@@ -47,8 +50,25 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun WearSignalNavHost() {
   val navController: NavHostController = rememberSwipeDismissableNavController()
-  val startDestination = if (AppDeps.account.isLinked) "status" else "pairing"
+  val startDestination = if (AppDeps.account.isLinked) "conversations" else "pairing"
   val scope = rememberCoroutineScope()
+
+  // Selected conversation is held here instead of a route argument: peers are
+  // base64 group ids ('/', '=') that don't survive route parsing.
+  var openConversation by remember { mutableStateOf<ConversationRow?>(null) }
+  var polling by remember { mutableStateOf(false) }
+  var pollCount by remember { mutableIntStateOf(0) } // bumped after each poll so screens reload
+
+  fun pollNow() {
+    if (polling) return
+    polling = true
+    scope.launch {
+      // Silent: the user is looking at the app, so notifying for what they're reading is noise.
+      withContext(Dispatchers.IO) { Poller.poll(silent = true) }
+      polling = false
+      pollCount++
+    }
+  }
 
   SwipeDismissableNavHost(navController = navController, startDestination = startDestination) {
     composable("pairing") {
@@ -56,74 +76,92 @@ fun WearSignalNavHost() {
       val context = androidx.compose.ui.platform.LocalContext.current
       PairingScreen(viewModel = viewModel) {
         PollScheduler.scheduleNext(context)
-        navController.navigate("status") {
+        MaintenanceWorker.ensureScheduled(context)
+        navController.navigate("conversations") {
           popUpTo("pairing") { inclusive = true }
         }
       }
     }
-    composable("status") {
-      var polling by remember { mutableStateOf(false) }
-      StatusScreen(
+    composable("settings") {
+      StatusScreen()
+    }
+    composable("conversations") {
+      var limit by remember { mutableIntStateOf(10) }
+      var conversations by remember { mutableStateOf(listOf<ConversationRow>()) }
+      LaunchedEffect(pollCount, limit) {
+        // one extra row tells us whether "Load more" has anything to load
+        conversations = withContext(Dispatchers.IO) { AppDeps.messages.conversations(limit + 1) }
+      }
+      ConversationsScreen(
+        conversations = conversations.take(limit),
+        hasMore = conversations.size > limit,
         polling = polling,
-        onPollNow = {
-          if (!polling) {
-            polling = true
-            scope.launch {
-              withContext(Dispatchers.IO) { Poller.poll() }
-              polling = false
-            }
-          }
+        onPoll = { pollNow() },
+        onLoadMore = { limit += 10 },
+        onOpen = { conversation ->
+          openConversation = conversation
+          navController.navigate("thread")
         },
-        onOpenMessages = { navController.navigate("messages") },
-        onNewMessage = { navController.navigate("compose") }
+        onNewMessage = { navController.navigate("compose") },
+        onOpenSettings = { navController.navigate("settings") }
       )
     }
-    composable("messages") {
+    composable("thread") {
+      val conversation = openConversation
+      if (conversation == null) {
+        navController.popBackStack()
+        return@composable
+      }
       var messages by remember { mutableStateOf(listOf<MessageRow>()) }
       var refreshKey by remember { mutableIntStateOf(0) }
-      LaunchedEffect(refreshKey) {
-        messages = withContext(Dispatchers.IO) { AppDeps.messages.recent() }
+      LaunchedEffect(refreshKey, pollCount) {
+        messages = withContext(Dispatchers.IO) { AppDeps.messages.thread(conversation.peer) }
       }
       val send = rememberSendLauncher(onSent = { refreshKey++ })
-      MessagesScreen(messages = messages, onReply = { row -> send(row.senderAci, row.sender) })
+      ThreadScreen(
+        title = conversation.title,
+        isGroup = conversation.isGroup,
+        messages = messages,
+        onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }
+      )
     }
     composable("compose") {
       val send = rememberSendLauncher(onSent = { navController.popBackStack() })
-      ComposeScreen(onPick = { entry -> send(entry.serviceId, entry.name) })
+      ComposeScreen(onPick = { entry -> send(entry.serviceId, false, entry.name) })
     }
   }
 }
 
 /**
  * Hosts the Wear OS native text-input (voice/keyboard/canned) and returns a callback that, given a
- * recipient ACI and a display label, opens the input and sends the typed text. Used for both
- * replying to a received message and starting a new conversation.
+ * conversation peer (ServiceId or group id) and a display label, opens the input and sends the
+ * typed text. Used for replies in a thread and for starting a new conversation.
  */
 @Composable
-fun rememberSendLauncher(onSent: () -> Unit): (aci: String, label: String) -> Unit {
+fun rememberSendLauncher(onSent: () -> Unit): (peer: String, isGroup: Boolean, label: String) -> Unit {
   val scope = rememberCoroutineScope()
-  val pendingAci = remember { mutableStateOf<String?>(null) }
+  val pending = remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 
   val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
     ActivityResultContracts.StartActivityForResult()
   ) { result ->
-    val aci = pendingAci.value
-    pendingAci.value = null
+    val target = pending.value
+    pending.value = null
     val text = result.data
       ?.let { android.app.RemoteInput.getResultsFromIntent(it) }
       ?.getCharSequence(REPLY_INPUT_KEY)
       ?.toString()
       ?.trim()
-    if (result.resultCode == android.app.Activity.RESULT_OK && aci != null && !text.isNullOrEmpty()) {
+    if (result.resultCode == android.app.Activity.RESULT_OK && target != null && !text.isNullOrEmpty()) {
       scope.launch {
-        withContext(Dispatchers.IO) { MessageSender.sendText(aci, text) }
+        withContext(Dispatchers.IO) { MessageSender.send(target.first, target.second, text) }
         onSent()
       }
     }
   }
 
-  return { aci, label ->
-    pendingAci.value = aci
+  return { peer, isGroup, label ->
+    pending.value = peer to isGroup
     val remoteInput = android.app.RemoteInput.Builder(REPLY_INPUT_KEY)
       .setLabel("Message $label")
       .build()

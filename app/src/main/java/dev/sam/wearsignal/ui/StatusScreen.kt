@@ -22,15 +22,10 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * Linked-account status and actions.
+ * Settings: linked-account info, the manual notification control, and debug helpers.
  */
 @Composable
-fun StatusScreen(
-  polling: Boolean,
-  onPollNow: () -> Unit,
-  onOpenMessages: () -> Unit,
-  onNewMessage: () -> Unit
-) {
+fun StatusScreen() {
   val context = LocalContext.current
   val account = AppDeps.account
   var intervalMinutes by remember { mutableIntStateOf(account.pollIntervalMinutes) }
@@ -54,33 +49,11 @@ fun StatusScreen(
       )
     }
     item {
+      // Manual notification control: on = watch polls and notifies (phone off/away);
+      // off = rely on the phone forwarding its notifications.
       Chip(
-        label = { Text(if (polling) "Polling…" else "Poll now") },
-        onClick = onPollNow,
-        colors = ChipDefaults.primaryChipColors(),
-        modifier = Modifier.fillMaxWidth()
-      )
-    }
-    item {
-      Chip(
-        label = { Text("Messages") },
-        onClick = onOpenMessages,
-        colors = ChipDefaults.secondaryChipColors(),
-        modifier = Modifier.fillMaxWidth()
-      )
-    }
-    item {
-      Chip(
-        label = { Text("New message") },
-        onClick = onNewMessage,
-        colors = ChipDefaults.primaryChipColors(),
-        modifier = Modifier.fillMaxWidth()
-      )
-    }
-    item {
-      Chip(
-        label = { Text(if (backgroundPolling) "Background: on" else "Background: off") },
-        secondaryLabel = { Text(if (backgroundPolling) "Polls every $intervalMinutes min" else "Manual only") },
+        label = { Text(if (backgroundPolling) "Notifications: on" else "Notifications: off") },
+        secondaryLabel = { Text(if (backgroundPolling) "Polls every $intervalMinutes min" else "Phone forwards only") },
         onClick = {
           backgroundPolling = !backgroundPolling
           account.backgroundPollingEnabled = backgroundPolling
