@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
@@ -52,6 +54,8 @@ fun ThreadScreen(
   title: String,
   isGroup: Boolean,
   messages: List<MessageRow>,
+  polling: Boolean,
+  onPoll: () -> Unit,
   onReply: () -> Unit
 ) {
   // items: title + messages + reply chip; messages load asynchronously,
@@ -86,12 +90,23 @@ fun ThreadScreen(
     }
 
     item {
-      Chip(
-        label = { Text("Reply") },
-        onClick = onReply,
-        colors = ChipDefaults.primaryChipColors(),
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-      )
+      Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Chip(
+          label = { Text("Reply") },
+          onClick = onReply,
+          colors = ChipDefaults.primaryChipColors(),
+          modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Button(
+          onClick = onPoll,
+          enabled = !polling,
+          colors = ButtonDefaults.secondaryButtonColors(),
+          modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+        ) {
+          Text(if (polling) "…" else "⟳")
+        }
+      }
     }
   }
 }

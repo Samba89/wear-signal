@@ -122,6 +122,8 @@ fun WearSignalNavHost() {
         title = conversation.title,
         isGroup = conversation.isGroup,
         messages = messages,
+        polling = polling,
+        onPoll = { pollNow() },
         onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }
       )
     }
