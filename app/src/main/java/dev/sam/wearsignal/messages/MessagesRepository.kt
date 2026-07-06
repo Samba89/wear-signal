@@ -22,8 +22,16 @@ data class MessageRow(
   val sentAt: Long,
   val fromSelf: Boolean,
   val delivered: Boolean = false,
-  val read: Boolean = false
+  val read: Boolean = false,
+  /** Content type of the attachment, when the message has one. */
+  val attachmentType: String? = null,
+  /** Local file of the downloaded (downscaled) image, when available. */
+  val attachmentPath: String? = null
 )
+
+/** Placeholder body text for attachment messages ("📷 Photo" / "📎 Attachment"). */
+fun attachmentPlaceholder(contentType: String?): String =
+  if (contentType?.startsWith("image/") == true) "📷 Photo" else "📎 Attachment"
 
 /**
  * Stores and reads decrypted messages, grouped into conversations by peer
@@ -36,7 +44,17 @@ class MessagesRepository(private val db: WatchDatabase) {
     const val MAX_PER_CONVERSATION = 100
   }
 
-  fun insert(peer: String, senderAci: String, groupId: String?, body: String, sentAt: Long, serverAt: Long, fromSelf: Boolean) {
+  fun insert(
+    peer: String,
+    senderAci: String,
+    groupId: String?,
+    body: String,
+    sentAt: Long,
+    serverAt: Long,
+    fromSelf: Boolean,
+    attachmentType: String? = null,
+    attachmentPointer: ByteArray? = null
+  ) {
     val values = ContentValues().apply {
       put("peer", peer)
       put("sender_aci", senderAci)
@@ -45,6 +63,8 @@ class MessagesRepository(private val db: WatchDatabase) {
       put("sent_at", sentAt)
       put("server_at", serverAt)
       put("from_self", if (fromSelf) 1 else 0)
+      put("attachment_type", attachmentType)
+      put("attachment_pointer", attachmentPointer)
     }
     db.writableDatabase.insert("messages", null, values)
     db.writableDatabase.execSQL(
@@ -66,7 +86,7 @@ class MessagesRepository(private val db: WatchDatabase) {
     db.readableDatabase.rawQuery(
       """
       SELECT m.peer, m.group_id IS NOT NULL, m.body, MAX(m.sent_at) AS last_at, m.from_self,
-             g.title, c.name, sc.name, m.sender_aci
+             g.title, c.name, sc.name, m.sender_aci, m.attachment_type
       FROM messages m
       LEFT JOIN groups g ON g.group_id = m.peer
       LEFT JOIN contacts c ON c.aci = m.peer
@@ -85,6 +105,8 @@ class MessagesRepository(private val db: WatchDatabase) {
         val contactName = if (cursor.isNull(6)) null else cursor.getString(6)
         val senderName = if (cursor.isNull(7)) null else cursor.getString(7)
         val senderAci = cursor.getString(8)
+        val attachmentType = if (cursor.isNull(9)) null else cursor.getString(9)
+        val body = cursor.getString(2)
         result += ConversationRow(
           peer = peer,
           title = when {
@@ -92,7 +114,7 @@ class MessagesRepository(private val db: WatchDatabase) {
             else -> contactName ?: peer.take(8)
           },
           isGroup = isGroup,
-          lastBody = cursor.getString(2),
+          lastBody = body.ifEmpty { if (attachmentType != null) attachmentPlaceholder(attachmentType) else body },
           lastAt = cursor.getLong(3),
           lastFromSelf = fromSelf,
           lastSender = if (fromSelf) "Me" else senderName ?: senderAci.take(8)
@@ -107,7 +129,8 @@ class MessagesRepository(private val db: WatchDatabase) {
     val result = mutableListOf<MessageRow>()
     db.readableDatabase.rawQuery(
       """
-      SELECT m.sender_aci, m.body, m.sent_at, m.from_self, c.name, m.delivered_at, m.read_at
+      SELECT m.sender_aci, m.body, m.sent_at, m.from_self, c.name, m.delivered_at, m.read_at,
+             m.attachment_type, m.attachment_path
       FROM messages m LEFT JOIN contacts c ON c.aci = m.sender_aci
       WHERE m.peer = ?
       ORDER BY m.sent_at ASC
@@ -129,7 +152,9 @@ class MessagesRepository(private val db: WatchDatabase) {
           sentAt = cursor.getLong(2),
           fromSelf = fromSelf,
           delivered = cursor.getLong(5) > 0,
-          read = cursor.getLong(6) > 0
+          read = cursor.getLong(6) > 0,
+          attachmentType = if (cursor.isNull(7)) null else cursor.getString(7),
+          attachmentPath = if (cursor.isNull(8)) null else cursor.getString(8)
         )
       }
     }

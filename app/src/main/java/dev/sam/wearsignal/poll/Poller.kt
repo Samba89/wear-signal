@@ -35,6 +35,9 @@ object Poller {
     // Contacts without a Signal profile photo fall back to their synced address-book photo.
     AppDeps.avatars.backfillDeviceContactPhotos()
 
+    // Fetch pending image attachments (bounded per run) and apply retention.
+    AppDeps.attachments.downloadPending()
+
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }
     }

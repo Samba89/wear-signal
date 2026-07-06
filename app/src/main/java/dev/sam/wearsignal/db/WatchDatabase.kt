@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 5) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 6) {
 
   override fun onCreate(db: SQLiteDatabase) {
     createDirectoryTable(db)
@@ -104,7 +104,10 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         server_at INTEGER NOT NULL,
         from_self INTEGER NOT NULL DEFAULT 0,
         delivered_at INTEGER NOT NULL DEFAULT 0,
-        read_at INTEGER NOT NULL DEFAULT 0
+        read_at INTEGER NOT NULL DEFAULT 0,
+        attachment_type TEXT,
+        attachment_pointer BLOB,
+        attachment_path TEXT
       )
       """
     )
@@ -144,6 +147,13 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
       // Delivery/read receipt status for our own sent messages (matched by sent_at).
       db.execSQL("ALTER TABLE messages ADD COLUMN delivered_at INTEGER NOT NULL DEFAULT 0")
       db.execSQL("ALTER TABLE messages ADD COLUMN read_at INTEGER NOT NULL DEFAULT 0")
+    }
+    if (oldVersion < 6) {
+      // First attachment of a message: content type, the serialized AttachmentPointer
+      // (kept until the download succeeds or expires), and the local downscaled file.
+      db.execSQL("ALTER TABLE messages ADD COLUMN attachment_type TEXT")
+      db.execSQL("ALTER TABLE messages ADD COLUMN attachment_pointer BLOB")
+      db.execSQL("ALTER TABLE messages ADD COLUMN attachment_path TEXT")
     }
   }
 

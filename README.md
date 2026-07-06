@@ -33,9 +33,13 @@ AGPL-3.0-only, personal use.
   drains the queue silently (keeps conversations current and refreshes the server's
   45-day linked-device inactivity deadline) and runs prekey upkeep — regardless of the
   toggle, with zero wearing-time battery cost.
-- **Manual poll**: "Check for messages" in the conversation list / "Poll now" on the
-  status screen, silent.
-- No read receipts, no typing indicators, text only (no attachments).
+- **Manual poll**: "Check for messages" in the conversation list, silent.
+- **Images (receive-only)**: image attachments are downloaded during polls, decrypted,
+  downscaled to watch resolution (~100KB each; originals never kept), shown inline in
+  threads. Retention: 7 days and a 64MB cap, oldest deleted first. Other attachment
+  types show as a placeholder.
+- Delivery/read ticks on sent messages; no typing indicators; no sending of
+  attachments or read receipts.
 
 ## Build
 

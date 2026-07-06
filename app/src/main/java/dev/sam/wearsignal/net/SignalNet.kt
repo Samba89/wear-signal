@@ -8,6 +8,7 @@ import dev.sam.wearsignal.crypto.WatchDataStore
 import org.signal.core.util.UptimeSleepTimer
 import org.signal.libsignal.net.Network
 import org.signal.libsignal.protocol.SignalProtocolAddress
+import org.whispersystems.signalservice.api.SignalServiceMessageReceiver
 import org.whispersystems.signalservice.api.SignalServiceMessageSender
 import org.whispersystems.signalservice.api.groupsv2.ClientZkOperations
 import org.whispersystems.signalservice.api.groupsv2.GroupsV2Api
@@ -132,6 +133,8 @@ class SignalNet(context: Context, private val account: AccountStore) {
   }
 
   val groupsV2Api: GroupsV2Api by lazy { GroupsV2Api(authWebSocket, authPushServiceSocket, groupsV2Operations) }
+
+  val messageReceiver: SignalServiceMessageReceiver by lazy { SignalServiceMessageReceiver(authPushServiceSocket) }
 
   val messageSender: SignalServiceMessageSender by lazy {
     val selfAddress = SignalProtocolAddress(account.aci!!.libSignalServiceId, account.deviceId)

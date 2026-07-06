@@ -51,7 +51,11 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     val groupId: String?,
     val body: String,
     val sentAt: Long,
-    val fromSelf: Boolean
+    val fromSelf: Boolean,
+    /** Content type of the first attachment, if any (downloaded later when it's an image). */
+    val attachmentType: String? = null,
+    /** Serialized AttachmentPointer proto for the first attachment. */
+    val attachmentPointer: ByteArray? = null
   )
 
   fun process(envelope: Envelope, serverDeliveredTimestamp: Long): IncomingMessage? {
@@ -113,7 +117,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     content.dataMessage?.let { data ->
       harvestProfileKey(sourceServiceId, data)
       val body = data.body
-      if (body.isNullOrEmpty()) {
+      val attachment = data.attachments.firstOrNull()
+      if (body.isNullOrEmpty() && attachment == null) {
         return null
       }
       val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
@@ -121,16 +126,19 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
         peer = groupId ?: sourceServiceId.toString(),
         senderAci = sourceServiceId.toString(),
         groupId = groupId,
-        body = body,
+        body = body.orEmpty(),
         sentAt = data.timestamp ?: envelope.clientTimestamp ?: serverDeliveredTimestamp,
-        fromSelf = false
+        fromSelf = false,
+        attachmentType = attachment?.contentType,
+        attachmentPointer = attachment?.encode()
       )
     }
 
     content.syncMessage?.sent?.let { sent ->
       val data = sent.message ?: return null
       val body = data.body
-      if (body.isNullOrEmpty()) {
+      val attachment = data.attachments.firstOrNull()
+      if (body.isNullOrEmpty() && attachment == null) {
         return null
       }
       val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
@@ -144,9 +152,11 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
         peer = peer,
         senderAci = selfAci.toString(),
         groupId = groupId,
-        body = body,
+        body = body.orEmpty(),
         sentAt = sent.timestamp ?: serverDeliveredTimestamp,
-        fromSelf = true
+        fromSelf = true,
+        attachmentType = attachment?.contentType,
+        attachmentPointer = attachment?.encode()
       )
     }
 
@@ -162,7 +172,9 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       body = message.body,
       sentAt = message.sentAt,
       serverAt = System.currentTimeMillis(),
-      fromSelf = message.fromSelf
+      fromSelf = message.fromSelf,
+      attachmentType = message.attachmentType,
+      attachmentPointer = message.attachmentPointer
     )
   }
 

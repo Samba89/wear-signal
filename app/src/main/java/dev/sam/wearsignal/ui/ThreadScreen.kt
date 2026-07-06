@@ -1,19 +1,24 @@
 package dev.sam.wearsignal.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -23,6 +28,7 @@ import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import dev.sam.wearsignal.messages.MessageRow
+import dev.sam.wearsignal.messages.attachmentPlaceholder
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -81,6 +87,32 @@ fun ThreadScreen(
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
       )
     }
+  }
+}
+
+/** The image when downloaded, otherwise a placeholder ("📷 Photo…" until the next poll fetches it). */
+@Composable
+private fun AttachmentContent(message: MessageRow, contentColor: Color, modifier: Modifier) {
+  val path = message.attachmentPath
+  val bitmap = remember(path) { path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
+
+  if (bitmap != null) {
+    Image(
+      bitmap = bitmap,
+      contentDescription = "Photo",
+      modifier = modifier
+        .padding(bottom = if (message.body.isNotEmpty()) 3.dp else 0.dp)
+        .fillMaxWidth()
+        .aspectRatio(bitmap.width.toFloat() / bitmap.height.toFloat())
+        .clip(RoundedCornerShape(10.dp))
+    )
+  } else {
+    Text(
+      text = attachmentPlaceholder(message.attachmentType) + if (message.attachmentType?.startsWith("image/") == true) "…" else "",
+      style = MaterialTheme.typography.body2,
+      color = contentColor.copy(alpha = 0.7f),
+      modifier = modifier
+    )
   }
 }
 
@@ -143,12 +175,17 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
             .padding(horizontal = 8.dp, vertical = 5.dp)
         ) {
           val contentColor = if (fromSelf) MaterialTheme.colors.onPrimary else Color.White
-          Text(
-            text = message.body,
-            style = MaterialTheme.typography.body2,
-            color = contentColor,
-            modifier = Modifier.align(Alignment.Start)
-          )
+          if (message.attachmentType != null) {
+            AttachmentContent(message, contentColor, modifier = Modifier.align(Alignment.Start))
+          }
+          if (message.body.isNotEmpty()) {
+            Text(
+              text = message.body,
+              style = MaterialTheme.typography.body2,
+              color = contentColor,
+              modifier = Modifier.align(Alignment.Start)
+            )
+          }
           Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
               text = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.sentAt)),

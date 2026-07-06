@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import dev.sam.wearsignal.messages.EnvelopeProcessor
 import dev.sam.wearsignal.messages.GroupStateResolver
+import dev.sam.wearsignal.messages.attachmentPlaceholder
 import dev.sam.wearsignal.ui.MainActivity
 import org.signal.core.util.logging.Log
 
@@ -62,7 +63,7 @@ class NotificationPresenter(private val context: Context) {
       val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_email)
         .setContentTitle(title)
-        .setContentText(message.body)
+        .setContentText(message.body.ifEmpty { attachmentPlaceholder(message.attachmentType) })
         .setWhen(message.sentAt)
         .setContentIntent(contentIntent)
         .setAutoCancel(true)
