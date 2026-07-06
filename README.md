@@ -51,6 +51,31 @@ configured via `local.properties`.
 ./gradlew :app:assembleDebug
 ```
 
+### Installing the APK on a watch
+
+Wear OS has no way to sideload from the watch itself — installs go over wireless ADB
+from a computer with [platform-tools](https://developer.android.com/tools/releases/platform-tools)
+(`adb`) on the same Wi-Fi network as the watch.
+
+1. **Enable developer options** on the watch: Settings → System → About → tap
+   **Build number** 7 times.
+2. **Enable debugging**: Settings → Developer options → turn on **ADB debugging**
+   and **Wireless debugging**.
+3. **Pair the computer** (first time per computer): in Wireless debugging choose
+   **Pair new device**, then on the computer run
+   `adb pair <ip>:<pairing-port>` and type the 6-digit code shown on the watch.
+4. **Connect**: back on the Wireless debugging screen, note the main IP and port, then
+   `adb connect <ip>:<port>`. The watch shows up in `adb devices`.
+5. **Install**: `adb install -r wear-signal.apk` (a couple of minutes over Wi-Fi).
+   - If it fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the installed copy was
+     signed with a different key: `adb uninstall dev.sam.wearsignal` first. That wipes
+     the app's data, so you'll re-link afterwards.
+6. **Link**: open the app on the watch and scan the QR from phone Signal →
+   Settings → Linked devices → Link new device (choose "Don't transfer messages"
+   if asked). Then poll once to pull in names, photos, and group state.
+
+Afterwards you can turn Wireless debugging off — it costs battery when left on.
+
 ### Signing / working from multiple machines
 
 Both debug and release builds are signed with `keystore/wear-signal.keystore` when it
