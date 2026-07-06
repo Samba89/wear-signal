@@ -65,12 +65,16 @@ object LinkingRepository {
       registrationLock = null,
       unidentifiedAccessKey = UnidentifiedAccess.deriveAccessKeyFrom(profileKey),
       unrestrictedUnidentifiedAccess = false,
+      // Declare everything the primary declares (AppCapabilities in Signal-Android):
+      // the server 409s a device link that would downgrade any account capability.
+      // We don't use storage service and ignore username-change syncs; claiming
+      // support is safe, refusing it blocks linking.
       capabilities = AccountAttributes.Capabilities(
-        storage = false,
+        storage = true,
         versionedExpirationTimer = true,
         attachmentBackfill = true,
         spqr = true,
-        usernameChangeSyncMessage = false
+        usernameChangeSyncMessage = true
       ),
       discoverableByPhoneNumber = false,
       name = Base64.encodeWithPadding(encryptedDeviceName),
@@ -130,7 +134,8 @@ object LinkingRepository {
         return LinkResult.Failure("Network error: ${result.exception.message}")
       }
       is NetworkResult.StatusCodeError -> {
-        Log.w(TAG, "Status code error during linking: ${result.code}")
+        // On 409 the body names the capabilities the account has but we didn't declare.
+        Log.w(TAG, "Status code error during linking: ${result.code} body=${result.stringBody}")
         val reason = when (result.code) {
           403 -> "Incorrect verification"
           409 -> "Missing account capability"
