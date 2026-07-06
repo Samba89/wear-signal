@@ -120,6 +120,16 @@ kotlin {
   }
 }
 
+// Don't package the merged baseline profile (assets/dexopt/baseline.prof): Wear's ART
+// reports run-from-apk for it, which Android Studio's release deployer treats as
+// INSTALL_BASELINE_PROFILE_FAILED. The profile only warms up the first launches, and
+// background dexopt on the charger achieves the same soon enough.
+tasks.whenTaskAdded {
+  if (name.contains("ArtProfile")) {
+    enabled = false
+  }
+}
+
 dependencies {
   coreLibraryDesugaring(libs.android.tools.desugar)
 
