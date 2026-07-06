@@ -23,6 +23,11 @@ import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import dev.sam.wearsignal.messages.MessageRow
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 private val INCOMING_BUBBLE = Color(0xFF2C2C2E)
 
@@ -60,7 +65,12 @@ fun ThreadScreen(
       val message = messages[i]
       // Collapse repeated sender chrome when the same person sends several in a row.
       val firstOfRun = i == 0 || messages[i - 1].senderAci != message.senderAci
-      MessageBubble(message = message, isGroup = isGroup, showSender = firstOfRun)
+      Column {
+        if (i == 0 || !sameDay(messages[i - 1].sentAt, message.sentAt)) {
+          DayDivider(message.sentAt)
+        }
+        MessageBubble(message = message, isGroup = isGroup, showSender = firstOfRun)
+      }
     }
 
     item {
@@ -72,6 +82,24 @@ fun ThreadScreen(
       )
     }
   }
+}
+
+private fun sameDay(a: Long, b: Long): Boolean {
+  val calA = Calendar.getInstance().apply { timeInMillis = a }
+  val calB = Calendar.getInstance().apply { timeInMillis = b }
+  return calA.get(Calendar.YEAR) == calB.get(Calendar.YEAR) &&
+    calA.get(Calendar.DAY_OF_YEAR) == calB.get(Calendar.DAY_OF_YEAR)
+}
+
+@Composable
+private fun DayDivider(at: Long) {
+  Text(
+    text = SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(at)),
+    style = MaterialTheme.typography.caption3,
+    color = Color(0xFF9E9E9E),
+    textAlign = TextAlign.Center,
+    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+  )
 }
 
 @Composable
@@ -107,17 +135,35 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
             modifier = Modifier.padding(start = 6.dp, bottom = 1.dp)
           )
         }
-        Box(
+        Column(
+          horizontalAlignment = Alignment.End,
           modifier = Modifier
             .clip(bubbleShape)
             .background(if (fromSelf) MaterialTheme.colors.primary else INCOMING_BUBBLE)
             .padding(horizontal = 8.dp, vertical = 5.dp)
         ) {
+          val contentColor = if (fromSelf) MaterialTheme.colors.onPrimary else Color.White
           Text(
             text = message.body,
             style = MaterialTheme.typography.body2,
-            color = if (fromSelf) MaterialTheme.colors.onPrimary else Color.White
+            color = contentColor,
+            modifier = Modifier.align(Alignment.Start)
           )
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+              text = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.sentAt)),
+              style = MaterialTheme.typography.caption3,
+              color = contentColor.copy(alpha = 0.55f)
+            )
+            if (fromSelf) {
+              Text(
+                text = if (message.delivered || message.read) " ✓✓" else " ✓",
+                style = MaterialTheme.typography.caption3,
+                // Read receipts brighten to full strength; sent/delivered stay dimmed.
+                color = if (message.read) contentColor else contentColor.copy(alpha = 0.55f)
+              )
+            }
+          }
         }
       }
     }

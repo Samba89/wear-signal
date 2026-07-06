@@ -22,6 +22,7 @@ import org.whispersystems.signalservice.api.push.SignalServiceAddress
 import org.whispersystems.signalservice.internal.push.Content
 import org.whispersystems.signalservice.internal.push.DataMessage
 import org.whispersystems.signalservice.internal.push.Envelope
+import org.whispersystems.signalservice.internal.push.ReceiptMessage
 
 /**
  * Decrypts envelopes and turns DataMessages / sent-transcripts into stored messages.
@@ -68,6 +69,9 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     val selfPni = account.pni
 
     if (envelope.type == Envelope.Type.SERVER_DELIVERY_RECEIPT) {
+      // Server-generated delivery receipt: the envelope timestamp is the sent timestamp
+      // of our message that reached the recipient's device.
+      envelope.clientTimestamp?.let { markReceipts(listOf(it), read = false) }
       return null
     }
 
@@ -90,6 +94,15 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       val skdm = SenderKeyDistributionMessage(skdmBytes.toByteArray())
       Log.i(TAG, "Processing SKDM for distribution ${skdm.distributionId}")
       SignalGroupSessionBuilder(SessionLock, GroupSessionBuilder(AppDeps.aciProtocolStore)).process(sender, skdm)
+    }
+
+    content.receiptMessage?.let { receipt ->
+      when (receipt.type) {
+        ReceiptMessage.Type.DELIVERY -> markReceipts(receipt.timestamp, read = false)
+        ReceiptMessage.Type.READ, ReceiptMessage.Type.VIEWED -> markReceipts(receipt.timestamp, read = true)
+        null -> Unit
+      }
+      return null
     }
 
     val sourceServiceId = result.metadata.sourceServiceId
@@ -151,6 +164,32 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       serverAt = System.currentTimeMillis(),
       fromSelf = message.fromSelf
     )
+  }
+
+  /**
+   * Marks our sent messages (matched by sent timestamp) delivered or read.
+   * Read implies delivered. Group receipts from any member count.
+   */
+  private fun markReceipts(sentTimestamps: List<Long>, read: Boolean) {
+    if (sentTimestamps.isEmpty()) return
+    val db = AppDeps.database.writableDatabase
+    val now = System.currentTimeMillis()
+    for (sentAt in sentTimestamps) {
+      if (read) {
+        db.execSQL(
+          "UPDATE messages SET read_at = CASE WHEN read_at = 0 THEN ? ELSE read_at END, " +
+            "delivered_at = CASE WHEN delivered_at = 0 THEN ? ELSE delivered_at END " +
+            "WHERE from_self = 1 AND sent_at = ?",
+          arrayOf(now, now, sentAt)
+        )
+      } else {
+        db.execSQL(
+          "UPDATE messages SET delivered_at = CASE WHEN delivered_at = 0 THEN ? ELSE delivered_at END " +
+            "WHERE from_self = 1 AND sent_at = ?",
+          arrayOf(now, sentAt)
+        )
+      }
+    }
   }
 
   private fun harvestProfileKey(sender: ServiceId, data: DataMessage) {

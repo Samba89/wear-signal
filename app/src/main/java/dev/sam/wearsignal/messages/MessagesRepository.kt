@@ -20,7 +20,9 @@ data class MessageRow(
   val senderAci: String,
   val body: String,
   val sentAt: Long,
-  val fromSelf: Boolean
+  val fromSelf: Boolean,
+  val delivered: Boolean = false,
+  val read: Boolean = false
 )
 
 /**
@@ -105,7 +107,7 @@ class MessagesRepository(private val db: WatchDatabase) {
     val result = mutableListOf<MessageRow>()
     db.readableDatabase.rawQuery(
       """
-      SELECT m.sender_aci, m.body, m.sent_at, m.from_self, c.name
+      SELECT m.sender_aci, m.body, m.sent_at, m.from_self, c.name, m.delivered_at, m.read_at
       FROM messages m LEFT JOIN contacts c ON c.aci = m.sender_aci
       WHERE m.peer = ?
       ORDER BY m.sent_at ASC
@@ -125,7 +127,9 @@ class MessagesRepository(private val db: WatchDatabase) {
           senderAci = senderAci,
           body = cursor.getString(1),
           sentAt = cursor.getLong(2),
-          fromSelf = fromSelf
+          fromSelf = fromSelf,
+          delivered = cursor.getLong(5) > 0,
+          read = cursor.getLong(6) > 0
         )
       }
     }
