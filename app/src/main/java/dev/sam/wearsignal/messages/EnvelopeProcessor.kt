@@ -142,7 +142,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
         return null
       }
       val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
-      val destination = ServiceId.parseOrNull(sent.destinationServiceId, null)?.toString()
+      // Newer clients set only the binary field; older ones only the string. Accept either.
+      val destination = ServiceId.parseOrNull(sent.destinationServiceId, sent.destinationServiceIdBinary)?.toString()
       val peer = groupId ?: destination
       if (peer == null) {
         Log.w(TAG, "Sent transcript with no group or destination; dropping")
