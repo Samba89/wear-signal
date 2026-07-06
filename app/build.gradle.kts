@@ -19,6 +19,8 @@ wire {
 android {
   namespace = "dev.sam.wearsignal"
   compileSdk = 36
+  // Needed to strip debug symbols from libsignal's native libs (~95MB → ~20MB per ABI).
+  ndkVersion = "27.2.12479018"
 
   defaultConfig {
     applicationId = "dev.sam.wearsignal"
@@ -48,6 +50,46 @@ android {
     buildConfigField("String", "BACKUP_SERVER_PUBLIC_PARAMS", "\"AJwNSU55fsFCbgaxGRD11wO1juAs8Yr5GF8FPlGzzvdJJIKH5/4CC7ZJSOe3yL2vturVaRU2Cx0n751Vt8wkj1bozK3CBV1UokxV09GWf+hdVImLGjXGYLLhnI1J2TWEe7iWHyb553EEnRb5oxr9n3lUbNAJuRmFM7hrr0Al0F0wrDD4S8lo2mGaXe0MJCOM166F8oYRQqpFeEHfiLnxA1O8ZLh7vMdv4g9jI5phpRBTsJ5IjiJrWeP0zdIGHEssUeprDZ9OUJ14m0v61eYJMKsf59Bn+mAT2a7YfB+Don9O\"")
   }
 
+  // Shared signing key so installs from any machine (and debug vs release) update in place
+  // without wiping app data — a signature change forces uninstall + relink. Copy
+  // keystore/wear-signal.keystore (gitignored) to each dev machine.
+  val sharedKeystore = rootProject.file("keystore/wear-signal.keystore")
+  if (sharedKeystore.exists()) {
+    signingConfigs {
+      create("shared") {
+        storeFile = sharedKeystore
+        storePassword = (project.findProperty("wearSignalKeystorePassword") as String?) ?: "wear-signal"
+        keyAlias = "wear-signal"
+        keyPassword = (project.findProperty("wearSignalKeystorePassword") as String?) ?: "wear-signal"
+      }
+    }
+    buildTypes {
+      debug {
+        signingConfig = signingConfigs.getByName("shared")
+      }
+      release {
+        signingConfig = signingConfigs.getByName("shared")
+      }
+    }
+  }
+
+  buildTypes {
+    release {
+      // Sideloaded straight onto the watch: Pixel Watch runs a 32-bit ARM userspace,
+      // so one ABI suffices. Debug keeps all three (emulator etc.) via defaultConfig.
+      ndk {
+        abiFilters.clear()
+        abiFilters += "armeabi-v7a"
+      }
+    }
+  }
+
+  lint {
+    // False positive from a stale transitive fragment artifact: we have no fragments,
+    // and ComponentActivity's ActivityResult handling doesn't have the flagged bug.
+    disable += "InvalidFragmentVersionForActivityResult"
+  }
+
   buildFeatures {
     compose = true
     buildConfig = true
@@ -62,6 +104,12 @@ android {
   packaging {
     resources {
       excludes += setOf("META-INF/LICENSE", "META-INF/NOTICE", "META-INF/INDEX.LIST", "META-INF/DEPENDENCIES")
+      // Desktop JNI binaries bundled inside the libsignal-client jar; useless on Android.
+      excludes += setOf("**/*.dylib", "**/*.dll")
+    }
+    jniLibs {
+      // libsignal's test-only native library; never loaded at runtime.
+      excludes += "**/libsignal_jni_testing.so"
     }
   }
 }

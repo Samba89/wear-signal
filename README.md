@@ -47,6 +47,15 @@ configured via `local.properties`.
 ./gradlew :app:assembleDebug
 ```
 
+### Signing / working from multiple machines
+
+Both debug and release builds are signed with `keystore/wear-signal.keystore` when it
+exists (gitignored — copy it to each dev machine; default password `wear-signal`,
+override with `-PwearSignalKeystorePassword=...`). A consistent signature is what lets
+installs from any machine update in place: installing an APK with a *different*
+signature requires uninstalling first, which wipes the app data and forces a re-link.
+If the keystore is absent, debug falls back to the machine-local debug key.
+
 ## Testing on the emulator
 
 ```
