@@ -23,6 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
@@ -112,23 +115,37 @@ fun ThreadScreen(
 }
 
 /**
- * Signal-style receipt state: one hollow circle = sent, two hollow = delivered,
- * two filled = read.
+ * Signal-style receipt state: checkmarked circles — one hollow = sent,
+ * two hollow = delivered, two filled (check knocked out) = read.
  */
 @Composable
-private fun ReceiptCircles(delivered: Boolean, read: Boolean, color: Color) {
+private fun ReceiptCircles(delivered: Boolean, read: Boolean, color: Color, knockout: Color) {
   val two = delivered || read
   val dotColor = if (read) color else color.copy(alpha = 0.65f)
-  Canvas(modifier = Modifier.size(width = if (two) 14.dp else 7.dp, height = 7.dp)) {
+  Canvas(modifier = Modifier.size(width = if (two) 17.dp else 8.dp, height = 8.dp)) {
     val radius = size.height / 2f
-    val stroke = 1.2.dp.toPx()
+    val stroke = 1.dp.toPx()
+
+    fun check(centerX: Float, checkColor: Color) {
+      val path = Path().apply {
+        moveTo(centerX - radius * 0.42f, radius * 1.02f)
+        lineTo(centerX - radius * 0.08f, radius * 1.38f)
+        lineTo(centerX + radius * 0.48f, radius * 0.62f)
+      }
+      drawPath(path, checkColor, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+
     fun circle(centerX: Float) {
       if (read) {
+        // Filled circle, check knocked out in the bubble colour.
         drawCircle(dotColor, radius, Offset(centerX, radius))
+        check(centerX, knockout)
       } else {
         drawCircle(dotColor, radius - stroke / 2f, Offset(centerX, radius), style = Stroke(stroke))
+        check(centerX, dotColor)
       }
     }
+
     circle(radius)
     if (two) {
       circle(size.width - radius)
@@ -240,7 +257,12 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
             )
             if (fromSelf) {
               Spacer(modifier = Modifier.width(3.dp))
-              ReceiptCircles(delivered = message.delivered, read = message.read, color = contentColor)
+              ReceiptCircles(
+                delivered = message.delivered,
+                read = message.read,
+                color = contentColor,
+                knockout = MaterialTheme.colors.primary
+              )
             }
           }
         }
