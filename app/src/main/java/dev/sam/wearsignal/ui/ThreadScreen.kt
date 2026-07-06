@@ -1,13 +1,17 @@
 package dev.sam.wearsignal.ui
 
 import android.graphics.BitmapFactory
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,8 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -86,6 +92,31 @@ fun ThreadScreen(
         colors = ChipDefaults.primaryChipColors(),
         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
       )
+    }
+  }
+}
+
+/**
+ * Signal-style receipt state: one hollow circle = sent, two hollow = delivered,
+ * two filled = read.
+ */
+@Composable
+private fun ReceiptCircles(delivered: Boolean, read: Boolean, color: Color) {
+  val two = delivered || read
+  val dotColor = if (read) color else color.copy(alpha = 0.65f)
+  Canvas(modifier = Modifier.size(width = if (two) 14.dp else 7.dp, height = 7.dp)) {
+    val radius = size.height / 2f
+    val stroke = 1.2.dp.toPx()
+    fun circle(centerX: Float) {
+      if (read) {
+        drawCircle(dotColor, radius, Offset(centerX, radius))
+      } else {
+        drawCircle(dotColor, radius - stroke / 2f, Offset(centerX, radius), style = Stroke(stroke))
+      }
+    }
+    circle(radius)
+    if (two) {
+      circle(size.width - radius)
     }
   }
 }
@@ -193,12 +224,8 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
               color = contentColor.copy(alpha = 0.55f)
             )
             if (fromSelf) {
-              Text(
-                text = if (message.delivered || message.read) " ✓✓" else " ✓",
-                style = MaterialTheme.typography.caption3,
-                // Read receipts brighten to full strength; sent/delivered stay dimmed.
-                color = if (message.read) contentColor else contentColor.copy(alpha = 0.55f)
-              )
+              Spacer(modifier = Modifier.width(3.dp))
+              ReceiptCircles(delivered = message.delivered, read = message.read, color = contentColor)
             }
           }
         }
