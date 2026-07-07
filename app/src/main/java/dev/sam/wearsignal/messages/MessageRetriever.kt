@@ -2,6 +2,7 @@ package dev.sam.wearsignal.messages
 
 import dev.sam.wearsignal.AppDeps
 import org.signal.core.util.logging.Log
+import org.whispersystems.signalservice.api.websocket.WebSocketConnectionState
 
 /**
  * Connects the authenticated websocket, drains the message queue, acks each envelope,
@@ -38,6 +39,11 @@ class MessageRetriever(private val processor: EnvelopeProcessor) {
             }
           }
         } catch (e: java.util.concurrent.TimeoutException) {
+          // Only an established connection may treat a timeout as "queue drained" —
+          // otherwise a dead network would masquerade as an empty queue.
+          if (webSocket.stateSnapshot != WebSocketConnectionState.CONNECTED) {
+            throw java.io.IOException("Websocket not connected (${webSocket.stateSnapshot})")
+          }
           Log.i(TAG, "Queue read timed out; assuming drained")
           false
         }

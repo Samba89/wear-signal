@@ -58,15 +58,20 @@ fun WearSignalNavHost() {
   var openConversation by remember { mutableStateOf<ConversationRow?>(null) }
   var polling by remember { mutableStateOf(false) }
   var pollCount by remember { mutableIntStateOf(0) } // bumped after each poll so screens reload
+  var pollStatus by remember { mutableStateOf<String?>(null) } // error text when the last poll failed
 
   fun pollNow() {
     if (polling) return
     polling = true
     scope.launch {
       // Silent: the user is looking at the app, so notifying for what they're reading is noise.
-      withContext(Dispatchers.IO) { Poller.poll(silent = true) }
+      val result = withContext(Dispatchers.IO) { Poller.poll(silent = true) }
       polling = false
       pollCount++
+      pollStatus = when (result) {
+        is Poller.Result.Failure -> result.message
+        is Poller.Result.Success -> null
+      }
     }
   }
 
@@ -96,6 +101,7 @@ fun WearSignalNavHost() {
         conversations = conversations.take(limit),
         hasMore = conversations.size > limit,
         polling = polling,
+        pollStatus = pollStatus,
         onPoll = { pollNow() },
         onLoadMore = { limit += 10 },
         onOpen = { conversation ->
@@ -123,6 +129,7 @@ fun WearSignalNavHost() {
         isGroup = conversation.isGroup,
         messages = messages,
         polling = polling,
+        pollStatus = pollStatus,
         onPoll = { pollNow() },
         onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }
       )

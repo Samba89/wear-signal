@@ -13,14 +13,28 @@ object Poller {
 
   private val TAG = Log.tag(Poller::class)
 
-  /** Runs a drain. Returns the number of new messages. Safe to call from any background thread. */
-  fun poll(silent: Boolean = false): Int {
+  sealed interface Result {
+    data class Success(val newMessages: Int) : Result
+    data class Failure(val message: String) : Result
+  }
+
+  /** Runs a drain. Never throws. Safe to call from any background thread. */
+  fun poll(silent: Boolean = false): Result {
     if (!AppDeps.account.isLinked) {
       Log.w(TAG, "Not linked; skipping poll")
-      return 0
+      return Result.Failure("Not linked")
     }
 
-    val newMessages = AppDeps.retriever.drainQueue()
+    val newMessages = try {
+      AppDeps.retriever.drainQueue()
+    } catch (t: Throwable) {
+      Log.w(TAG, "Poll failed to drain the queue", t)
+      try {
+        AppDeps.net.authWebSocket.disconnect()
+      } catch (_: Throwable) {
+      }
+      return Result.Failure("Couldn't connect")
+    }
 
     // Resolve names, group state, and photos for new senders, plus any contacts/groups
     // still awaiting an avatar backfill (cheap no-op once everything is fetched).
@@ -42,7 +56,7 @@ object Poller {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }
     }
 
-    return newMessages.size
+    return Result.Success(newMessages.size)
   }
 
   fun resolveName(aci: String): String {

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ fun ConversationsScreen(
   conversations: List<ConversationRow>,
   hasMore: Boolean,
   polling: Boolean,
+  pollStatus: String?,
   onPoll: () -> Unit,
   onLoadMore: () -> Unit,
   onOpen: (ConversationRow) -> Unit,
@@ -42,6 +44,18 @@ fun ConversationsScreen(
         colors = ChipDefaults.primaryChipColors(),
         modifier = Modifier.fillMaxWidth()
       )
+    }
+
+    if (pollStatus != null && !polling) {
+      item {
+        Text(
+          text = "⚠ $pollStatus",
+          style = MaterialTheme.typography.caption2,
+          color = Color(0xFFFFAB91),
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+        )
+      }
     }
 
     if (conversations.isEmpty()) {

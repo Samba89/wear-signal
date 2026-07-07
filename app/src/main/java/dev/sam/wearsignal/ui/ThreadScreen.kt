@@ -58,6 +58,7 @@ fun ThreadScreen(
   isGroup: Boolean,
   messages: List<MessageRow>,
   polling: Boolean,
+  pollStatus: String?,
   onPoll: () -> Unit,
   onReply: () -> Unit
 ) {
@@ -89,6 +90,18 @@ fun ThreadScreen(
           DayDivider(message.sentAt)
         }
         MessageBubble(message = message, isGroup = isGroup, showSender = firstOfRun)
+      }
+    }
+
+    if (pollStatus != null && !polling) {
+      item {
+        Text(
+          text = "⚠ $pollStatus",
+          style = MaterialTheme.typography.caption3,
+          color = Color(0xFFFFAB91),
+          textAlign = TextAlign.Center,
+          modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+        )
       }
     }
 
