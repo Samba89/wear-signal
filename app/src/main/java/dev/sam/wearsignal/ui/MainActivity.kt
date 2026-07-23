@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.material.MaterialTheme
@@ -28,6 +29,7 @@ import dev.sam.wearsignal.messages.MessageSender
 import dev.sam.wearsignal.poll.MaintenanceWorker
 import dev.sam.wearsignal.poll.PollScheduler
 import dev.sam.wearsignal.poll.Poller
+import dev.sam.wearsignal.tile.Glanceables
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -120,8 +122,16 @@ fun WearSignalNavHost() {
       }
       var messages by remember { mutableStateOf(listOf<MessageRow>()) }
       var refreshKey by remember { mutableIntStateOf(0) }
+      val context = LocalContext.current
       LaunchedEffect(refreshKey, pollCount) {
-        messages = withContext(Dispatchers.IO) { AppDeps.messages.thread(conversation.peer) }
+        val newlySeen = withContext(Dispatchers.IO) {
+          messages = AppDeps.messages.thread(conversation.peer)
+          // Viewing the thread counts as reading: clear these from the tile/complication unread count.
+          AppDeps.messages.markThreadSeen(conversation.peer)
+        }
+        if (newlySeen > 0) {
+          Glanceables.requestUpdate(context)
+        }
       }
       val send = rememberSendLauncher(onSent = { refreshKey++ })
       ThreadScreen(
