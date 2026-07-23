@@ -125,6 +125,25 @@ class MessagesRepository(private val db: WatchDatabase) {
   }
 
   /**
+   * Incoming messages not yet seen anywhere — shown on the tile and complication.
+   * "Seen" means read on the phone (synced over) or its thread viewed on the watch.
+   */
+  fun unreadCount(): Int {
+    db.readableDatabase.rawQuery(
+      "SELECT COUNT(*) FROM messages WHERE from_self = 0 AND seen_at = 0",
+      null
+    ).use { cursor ->
+      return if (cursor.moveToFirst()) cursor.getInt(0) else 0
+    }
+  }
+
+  /** Marks a conversation's incoming messages seen (its thread is on screen). Returns how many changed. */
+  fun markThreadSeen(peer: String): Int {
+    val values = ContentValues().apply { put("seen_at", System.currentTimeMillis()) }
+    return db.writableDatabase.update("messages", values, "peer = ? AND from_self = 0 AND seen_at = 0", arrayOf(peer))
+  }
+
+  /**
    * Folds a PNI-keyed 1:1 conversation into the person's ACI thread, once the association is
    * learned (their PNI signature, or CDSI returning the ACI). Also repoints the contact
    * directory's send target so future sends go to the ACI. Returns whether anything changed.
