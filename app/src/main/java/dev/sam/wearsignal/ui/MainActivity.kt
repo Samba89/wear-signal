@@ -129,8 +129,14 @@ fun WearSignalNavHost() {
           // Viewing the thread counts as reading: clear these from the tile/complication unread count.
           AppDeps.messages.markThreadSeen(conversation.peer)
         }
-        if (newlySeen > 0) {
+        if (newlySeen.isNotEmpty()) {
           Glanceables.requestUpdate(context)
+          // Only an open thread counts as reading for the rest of Signal — never the
+          // conversation list or the glanceables. Sync to our devices always; receipts
+          // to senders per the toggle. Fire-and-forget so navigation doesn't cancel it.
+          scope.launch(Dispatchers.IO) {
+            MessageSender.sendReadSignals(newlySeen, AppDeps.account.sendReadReceipts)
+          }
         }
       }
       val send = rememberSendLauncher(onSent = { refreshKey++ })

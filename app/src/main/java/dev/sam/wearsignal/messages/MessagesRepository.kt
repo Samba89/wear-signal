@@ -37,6 +37,9 @@ data class MessageRow(
 /** One emoji's reactions to a message: how many people, and whether we're one of them. */
 data class MessageReaction(val emoji: String, val count: Int, val mine: Boolean)
 
+/** An incoming message newly marked seen: its author and sent timestamp (Signal's message key). */
+data class SeenMessage(val senderAci: String, val sentAt: Long)
+
 /** Placeholder body text for attachment messages ("📷 Photo" / "📎 Attachment"). */
 fun attachmentPlaceholder(contentType: String?): String =
   if (contentType?.startsWith("image/") == true) "📷 Photo" else "📎 Attachment"
@@ -196,10 +199,22 @@ class MessagesRepository(private val db: WatchDatabase) {
     }
   }
 
-  /** Marks a conversation's incoming messages seen (its thread is on screen). Returns how many changed. */
-  fun markThreadSeen(peer: String): Int {
-    val values = ContentValues().apply { put("seen_at", System.currentTimeMillis()) }
-    return db.writableDatabase.update("messages", values, "peer = ? AND from_self = 0 AND seen_at = 0", arrayOf(peer))
+  /** Marks a conversation's incoming messages seen (its thread is on screen). Returns the newly seen ones. */
+  fun markThreadSeen(peer: String): List<SeenMessage> {
+    val seen = mutableListOf<SeenMessage>()
+    db.readableDatabase.rawQuery(
+      "SELECT sender_aci, sent_at FROM messages WHERE peer = ? AND from_self = 0 AND seen_at = 0",
+      arrayOf(peer)
+    ).use { cursor ->
+      while (cursor.moveToNext()) {
+        seen += SeenMessage(senderAci = cursor.getString(0), sentAt = cursor.getLong(1))
+      }
+    }
+    if (seen.isNotEmpty()) {
+      val values = ContentValues().apply { put("seen_at", System.currentTimeMillis()) }
+      db.writableDatabase.update("messages", values, "peer = ? AND from_self = 0 AND seen_at = 0", arrayOf(peer))
+    }
+    return seen
   }
 
   /**
