@@ -124,6 +124,44 @@ class MessagesRepository(private val db: WatchDatabase) {
     return result
   }
 
+  /**
+   * Folds a PNI-keyed 1:1 conversation into the person's ACI thread, once the association is
+   * learned (their PNI signature, or CDSI returning the ACI). Also repoints the contact
+   * directory's send target so future sends go to the ACI. Returns whether anything changed.
+   */
+  fun mergePniIntoAci(pni: String, aci: String): Boolean {
+    if (pni == aci) return false
+    val writable = db.writableDatabase
+    // Carry the address-book name over to the contacts table (keyed by ACI) so the merged
+    // thread is titled, without clobbering a name already resolved from their Signal profile.
+    writable.execSQL(
+      "INSERT INTO contacts (aci, name, fetched_at) SELECT ?, name, 0 FROM directory WHERE aci = ? AND name IS NOT NULL " +
+        "ON CONFLICT(aci) DO UPDATE SET name = COALESCE(contacts.name, excluded.name)",
+      arrayOf(aci, pni)
+    )
+    val directoryMoved = writable.compileStatement("UPDATE directory SET aci = ? WHERE aci = ?").use {
+      it.bindString(1, aci)
+      it.bindString(2, pni)
+      it.executeUpdateDelete()
+    }
+    val moved = writable.compileStatement("UPDATE messages SET peer = ? WHERE peer = ?").use {
+      it.bindString(1, aci)
+      it.bindString(2, pni)
+      it.executeUpdateDelete()
+    }
+    if (moved > 0) {
+      writable.execSQL(
+        """
+        DELETE FROM messages WHERE peer = ? AND _id NOT IN (
+          SELECT _id FROM messages WHERE peer = ? ORDER BY sent_at DESC LIMIT $MAX_PER_CONVERSATION
+        )
+        """,
+        arrayOf(aci, aci)
+      )
+    }
+    return moved > 0 || directoryMoved > 0
+  }
+
   /** Messages of one conversation, oldest first, with sender names resolved from the contacts cache. */
   fun thread(peer: String): List<MessageRow> {
     val result = mutableListOf<MessageRow>()
