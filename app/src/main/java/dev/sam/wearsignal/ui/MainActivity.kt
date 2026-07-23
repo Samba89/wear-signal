@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.wear.compose.material.MaterialTheme
@@ -28,6 +29,7 @@ import dev.sam.wearsignal.messages.MessageSender
 import dev.sam.wearsignal.poll.MaintenanceWorker
 import dev.sam.wearsignal.poll.PollScheduler
 import dev.sam.wearsignal.poll.Poller
+import dev.sam.wearsignal.tile.Glanceables
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -120,10 +122,36 @@ fun WearSignalNavHost() {
       }
       var messages by remember { mutableStateOf(listOf<MessageRow>()) }
       var refreshKey by remember { mutableIntStateOf(0) }
+      val context = LocalContext.current
       LaunchedEffect(refreshKey, pollCount) {
-        messages = withContext(Dispatchers.IO) { AppDeps.messages.thread(conversation.peer) }
+        val newlySeen = withContext(Dispatchers.IO) {
+          messages = AppDeps.messages.thread(conversation.peer, AppDeps.account.aci?.toString())
+          // Viewing the thread counts as reading: clear these from the tile/complication unread count.
+          AppDeps.messages.markThreadSeen(conversation.peer)
+        }
+        if (newlySeen > 0) {
+          Glanceables.requestUpdate(context)
+        }
       }
       val send = rememberSendLauncher(onSent = { refreshKey++ })
+      fun react(message: MessageRow, emoji: String) {
+        scope.launch {
+          withContext(Dispatchers.IO) {
+            // Picking your current reaction again retracts it.
+            val remove = message.reactions.any { it.mine && it.emoji == emoji }
+            MessageSender.sendReaction(
+              peer = conversation.peer,
+              isGroup = conversation.isGroup,
+              targetAuthorAci = message.senderAci,
+              targetSentAt = message.sentAt,
+              emoji = emoji,
+              remove = remove
+            )
+          }
+          refreshKey++
+        }
+      }
+      val pickEmoji = rememberEmojiInputLauncher(onEmoji = ::react)
       ThreadScreen(
         title = conversation.title,
         isGroup = conversation.isGroup,
@@ -131,7 +159,9 @@ fun WearSignalNavHost() {
         polling = polling,
         pollStatus = pollStatus,
         onPoll = { pollNow() },
-        onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }
+        onReply = { send(conversation.peer, conversation.isGroup, conversation.title) },
+        onReact = ::react,
+        onReactCustom = pickEmoji
       )
     }
     composable("compose") {
@@ -180,4 +210,56 @@ fun rememberSendLauncher(onSent: () -> Unit): (peer: String, isGroup: Boolean, l
   }
 }
 
+/**
+ * Hosts the Wear OS native text-input for reacting with any emoji (Gboard's emoji tab, or voice).
+ * Returns a callback that opens the input for a message; the first emoji typed is passed to
+ * [onEmoji] with that message.
+ */
+@Composable
+fun rememberEmojiInputLauncher(onEmoji: (MessageRow, String) -> Unit): (MessageRow) -> Unit {
+  val pending = remember { mutableStateOf<MessageRow?>(null) }
+
+  val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+    ActivityResultContracts.StartActivityForResult()
+  ) { result ->
+    val message = pending.value
+    pending.value = null
+    val text = result.data
+      ?.let { android.app.RemoteInput.getResultsFromIntent(it) }
+      ?.getCharSequence(REACTION_INPUT_KEY)
+      ?.toString()
+    val emoji = text?.let { firstEmoji(it) }
+    if (result.resultCode == android.app.Activity.RESULT_OK && message != null && emoji != null) {
+      onEmoji(message, emoji)
+    }
+  }
+
+  return { message ->
+    pending.value = message
+    val remoteInput = android.app.RemoteInput.Builder(REACTION_INPUT_KEY)
+      .setLabel("React with an emoji")
+      .build()
+    val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
+    RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(remoteInput))
+    launcher.launch(intent)
+  }
+}
+
+/**
+ * The first grapheme cluster of [text], if it looks like an emoji. Grapheme-aware because
+ * emoji are multi-code-point (skin tones, ZWJ sequences like ❤️‍🔥) — String.take(1) would
+ * corrupt them. Plain text (a voice reply of "ok") is rejected rather than sent as a reaction.
+ */
+private fun firstEmoji(text: String): String? {
+  val trimmed = text.trim()
+  if (trimmed.isEmpty()) return null
+  val breaker = android.icu.text.BreakIterator.getCharacterInstance()
+  breaker.setText(trimmed)
+  val end = breaker.next()
+  if (end == android.icu.text.BreakIterator.DONE) return null
+  val grapheme = trimmed.substring(0, end)
+  return grapheme.takeIf { g -> g.any { it.code > 0x2000 } }
+}
+
 private const val REPLY_INPUT_KEY = "reply_text"
+private const val REACTION_INPUT_KEY = "reaction_emoji"

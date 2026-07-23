@@ -3,6 +3,7 @@ package dev.sam.wearsignal.poll
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.ProfileNameResolver
+import dev.sam.wearsignal.tile.Glanceables
 import org.signal.core.util.logging.Log
 
 /**
@@ -55,6 +56,8 @@ object Poller {
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }
     }
+
+    Glanceables.requestUpdate(AppDeps.context)
 
     return Result.Success(newMessages.size)
   }
