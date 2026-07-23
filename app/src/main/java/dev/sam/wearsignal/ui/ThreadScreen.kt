@@ -72,7 +72,8 @@ fun ThreadScreen(
   pollStatus: String?,
   onPoll: () -> Unit,
   onReply: () -> Unit,
-  onReact: (MessageRow, String) -> Unit
+  onReact: (MessageRow, String) -> Unit,
+  onReactCustom: (MessageRow) -> Unit
 ) {
   // items: title + messages + reply chip; messages load asynchronously,
   // so scroll to the latest when they arrive rather than at creation
@@ -153,6 +154,10 @@ fun ThreadScreen(
           reactingTo = null
           onReact(message, emoji)
         },
+        onPickCustom = {
+          reactingTo = null
+          onReactCustom(message)
+        },
         onDismiss = { reactingTo = null }
       )
     }
@@ -162,9 +167,16 @@ fun ThreadScreen(
 /**
  * Full-screen overlay with the reaction palette. Our current reaction is highlighted;
  * picking it again retracts it (the caller derives remove from [myReaction]).
+ * ＋ opens the system input for any other emoji; a current reaction from outside
+ * the palette shows next to it so it stays retractable.
  */
 @Composable
-private fun ReactionPalette(myReaction: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+private fun ReactionPalette(
+  myReaction: String?,
+  onPick: (String) -> Unit,
+  onPickCustom: () -> Unit,
+  onDismiss: () -> Unit
+) {
   Box(
     modifier = Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss),
     contentAlignment = Alignment.Center
@@ -173,17 +185,32 @@ private fun ReactionPalette(myReaction: String?, onPick: (String) -> Unit, onDis
       REACTION_EMOJIS.chunked(3).forEach { rowEmojis ->
         Row {
           rowEmojis.forEach { emoji ->
-            Button(
-              onClick = { onPick(emoji) },
-              colors = if (emoji == myReaction) ButtonDefaults.primaryButtonColors() else ButtonDefaults.secondaryButtonColors(),
-              modifier = Modifier.padding(3.dp).size(44.dp)
-            ) {
-              Text(text = emoji, style = MaterialTheme.typography.title3)
-            }
+            PaletteButton(
+              label = emoji,
+              highlighted = emoji == myReaction,
+              onClick = { onPick(emoji) }
+            )
           }
         }
       }
+      Row {
+        if (myReaction != null && myReaction !in REACTION_EMOJIS) {
+          PaletteButton(label = myReaction, highlighted = true, onClick = { onPick(myReaction) })
+        }
+        PaletteButton(label = "＋", highlighted = false, onClick = onPickCustom)
+      }
     }
+  }
+}
+
+@Composable
+private fun PaletteButton(label: String, highlighted: Boolean, onClick: () -> Unit) {
+  Button(
+    onClick = onClick,
+    colors = if (highlighted) ButtonDefaults.primaryButtonColors() else ButtonDefaults.secondaryButtonColors(),
+    modifier = Modifier.padding(3.dp).size(44.dp)
+  ) {
+    Text(text = label, style = MaterialTheme.typography.title3)
   }
 }
 
