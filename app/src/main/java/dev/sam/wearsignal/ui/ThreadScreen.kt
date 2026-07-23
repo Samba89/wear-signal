@@ -2,13 +2,17 @@ package dev.sam.wearsignal.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,7 +21,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,9 +55,13 @@ import java.util.Locale
 
 private val INCOMING_BUBBLE = Color(0xFF2C2C2E)
 
+/** The fixed reaction palette (Signal's defaults) — a full emoji picker is unusable at watch size. */
+private val REACTION_EMOJIS = listOf("❤️", "👍", "👎", "😂", "😮", "😢")
+
 /**
  * One conversation as a chat: own messages right in the accent colour, incoming left;
  * group messages carry the sender's avatar and colour. Opens scrolled to the latest.
+ * Long-pressing a bubble opens the reaction palette.
  */
 @Composable
 fun ThreadScreen(
@@ -60,7 +71,8 @@ fun ThreadScreen(
   polling: Boolean,
   pollStatus: String?,
   onPoll: () -> Unit,
-  onReply: () -> Unit
+  onReply: () -> Unit,
+  onReact: (MessageRow, String) -> Unit
 ) {
   // items: title + messages + reply chip; messages load asynchronously,
   // so scroll to the latest when they arrive rather than at creation
@@ -71,56 +83,104 @@ fun ThreadScreen(
     }
   }
 
-  ScalingLazyColumn(state = listState) {
-    item {
-      Text(
-        text = if (isGroup) "$title 👥" else title,
-        style = MaterialTheme.typography.title3,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-      )
-    }
+  var reactingTo by remember { mutableStateOf<MessageRow?>(null) }
 
-    items(messages.size) { i ->
-      val message = messages[i]
-      // Collapse repeated sender chrome when the same person sends several in a row.
-      val firstOfRun = i == 0 || messages[i - 1].senderAci != message.senderAci
-      Column {
-        if (i == 0 || !sameDay(messages[i - 1].sentAt, message.sentAt)) {
-          DayDivider(message.sentAt)
-        }
-        MessageBubble(message = message, isGroup = isGroup, showSender = firstOfRun)
-      }
-    }
-
-    if (pollStatus != null && !polling) {
+  Box(modifier = Modifier.fillMaxSize()) {
+    ScalingLazyColumn(state = listState) {
       item {
         Text(
-          text = "⚠ $pollStatus",
-          style = MaterialTheme.typography.caption3,
-          color = Color(0xFFFFAB91),
+          text = if (isGroup) "$title 👥" else title,
+          style = MaterialTheme.typography.title3,
           textAlign = TextAlign.Center,
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )
       }
+
+      items(messages.size) { i ->
+        val message = messages[i]
+        // Collapse repeated sender chrome when the same person sends several in a row.
+        val firstOfRun = i == 0 || messages[i - 1].senderAci != message.senderAci
+        Column {
+          if (i == 0 || !sameDay(messages[i - 1].sentAt, message.sentAt)) {
+            DayDivider(message.sentAt)
+          }
+          MessageBubble(
+            message = message,
+            isGroup = isGroup,
+            showSender = firstOfRun,
+            onLongPress = { reactingTo = message }
+          )
+        }
+      }
+
+      if (pollStatus != null && !polling) {
+        item {
+          Text(
+            text = "⚠ $pollStatus",
+            style = MaterialTheme.typography.caption3,
+            color = Color(0xFFFFAB91),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+          )
+        }
+      }
+
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+          Chip(
+            label = { Text("Reply") },
+            onClick = onReply,
+            colors = ChipDefaults.primaryChipColors(),
+            modifier = Modifier.weight(1f)
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Button(
+            onClick = onPoll,
+            enabled = !polling,
+            colors = ButtonDefaults.secondaryButtonColors(),
+            modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+          ) {
+            Text(if (polling) "…" else "⟳")
+          }
+        }
+      }
     }
 
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        Chip(
-          label = { Text("Reply") },
-          onClick = onReply,
-          colors = ChipDefaults.primaryChipColors(),
-          modifier = Modifier.weight(1f)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Button(
-          onClick = onPoll,
-          enabled = !polling,
-          colors = ButtonDefaults.secondaryButtonColors(),
-          modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
-        ) {
-          Text(if (polling) "…" else "⟳")
+    reactingTo?.let { message ->
+      ReactionPalette(
+        myReaction = message.myReaction,
+        onPick = { emoji ->
+          reactingTo = null
+          onReact(message, emoji)
+        },
+        onDismiss = { reactingTo = null }
+      )
+    }
+  }
+}
+
+/**
+ * Full-screen overlay with the reaction palette. Our current reaction is highlighted;
+ * picking it again retracts it (the caller derives remove from [myReaction]).
+ */
+@Composable
+private fun ReactionPalette(myReaction: String?, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+  Box(
+    modifier = Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss),
+    contentAlignment = Alignment.Center
+  ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+      REACTION_EMOJIS.chunked(3).forEach { rowEmojis ->
+        Row {
+          rowEmojis.forEach { emoji ->
+            Button(
+              onClick = { onPick(emoji) },
+              colors = if (emoji == myReaction) ButtonDefaults.primaryButtonColors() else ButtonDefaults.secondaryButtonColors(),
+              modifier = Modifier.padding(3.dp).size(44.dp)
+            ) {
+              Text(text = emoji, style = MaterialTheme.typography.title3)
+            }
+          }
         }
       }
     }
@@ -210,8 +270,9 @@ private fun DayDivider(at: Long) {
   )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boolean) {
+private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boolean, onLongPress: () -> Unit) {
   val fromSelf = message.fromSelf
   val bubbleShape = if (fromSelf) {
     RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
@@ -248,6 +309,7 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
           modifier = Modifier
             .clip(bubbleShape)
             .background(if (fromSelf) MaterialTheme.colors.primary else INCOMING_BUBBLE)
+            .combinedClickable(onClick = {}, onLongClick = onLongPress)
             .padding(horizontal = 8.dp, vertical = 5.dp)
         ) {
           val contentColor = if (fromSelf) MaterialTheme.colors.onPrimary else Color.White
@@ -275,6 +337,22 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
                 read = message.read,
                 color = contentColor,
                 knockout = MaterialTheme.colors.primary
+              )
+            }
+          }
+        }
+        if (message.reactions.isNotEmpty()) {
+          Row(modifier = Modifier.padding(top = 1.dp).align(if (fromSelf) Alignment.End else Alignment.Start)) {
+            message.reactions.forEach { reaction ->
+              Text(
+                text = if (reaction.count > 1) "${reaction.emoji} ${reaction.count}" else reaction.emoji,
+                style = MaterialTheme.typography.caption3,
+                color = Color.White,
+                modifier = Modifier
+                  .padding(end = 2.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(if (reaction.mine) MaterialTheme.colors.primaryVariant else INCOMING_BUBBLE)
+                  .padding(horizontal = 4.dp, vertical = 1.dp)
               )
             }
           }

@@ -125,7 +125,7 @@ fun WearSignalNavHost() {
       val context = LocalContext.current
       LaunchedEffect(refreshKey, pollCount) {
         val newlySeen = withContext(Dispatchers.IO) {
-          messages = AppDeps.messages.thread(conversation.peer)
+          messages = AppDeps.messages.thread(conversation.peer, AppDeps.account.aci?.toString())
           // Viewing the thread counts as reading: clear these from the tile/complication unread count.
           AppDeps.messages.markThreadSeen(conversation.peer)
         }
@@ -141,7 +141,24 @@ fun WearSignalNavHost() {
         polling = polling,
         pollStatus = pollStatus,
         onPoll = { pollNow() },
-        onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }
+        onReply = { send(conversation.peer, conversation.isGroup, conversation.title) },
+        onReact = { message, emoji ->
+          scope.launch {
+            withContext(Dispatchers.IO) {
+              // Picking your current reaction again retracts it.
+              val remove = message.reactions.any { it.mine && it.emoji == emoji }
+              MessageSender.sendReaction(
+                peer = conversation.peer,
+                isGroup = conversation.isGroup,
+                targetAuthorAci = message.senderAci,
+                targetSentAt = message.sentAt,
+                emoji = emoji,
+                remove = remove
+              )
+            }
+            refreshKey++
+          }
+        }
       )
     }
     composable("compose") {
