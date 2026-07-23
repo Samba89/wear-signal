@@ -51,7 +51,10 @@ object ContactDirectory {
       val result = AppDeps.net.cdsApi.getRegisteredUsers(
         previousE164s = emptySet(),
         newE164s = nameByNumber.keys,
-        serviceIds = emptyMap<ServiceId, ProfileKey>(),
+        // Profile keys of people we've chatted with: CDSI reveals the ACI of a number only
+        // when the matching profile key proves prior contact. This upgrades "PNI:"-keyed
+        // directory entries to ACIs once the person has messaged us.
+        serviceIds = knownProfileKeys(),
         token = Optional.empty(),
         timeoutMs = 30_000,
         libsignalNetwork = AppDeps.net.libsignalNetwork
@@ -86,6 +89,26 @@ object ContactDirectory {
     }
   }
 
+  /** ACI → profile key for everyone we've stored a profile key for (harvested from their messages). */
+  private fun knownProfileKeys(): Map<ServiceId, ProfileKey> {
+    val keys = mutableMapOf<ServiceId, ProfileKey>()
+    AppDeps.database.readableDatabase.rawQuery(
+      "SELECT aci, profile_key FROM contacts WHERE profile_key IS NOT NULL",
+      emptyArray()
+    ).use { cursor ->
+      while (cursor.moveToNext()) {
+        val serviceId = ServiceId.parseOrNull(cursor.getString(0)) ?: continue
+        val profileKey = try {
+          ProfileKey(cursor.getBlob(1))
+        } catch (t: Throwable) {
+          continue
+        }
+        keys[serviceId] = profileKey
+      }
+    }
+    return keys
+  }
+
   /** Writes registered contacts to the directory table; returns how many were registered. */
   private fun cache(
     results: Map<String, CdsiV2Service.ResponseItem>,
@@ -93,22 +116,40 @@ object ContactDirectory {
   ): Int {
     val db = AppDeps.database.writableDatabase
     var registered = 0
+    // Snapshot the old send targets: a number that was "PNI:"-keyed and now resolves to an
+    // ACI has its conversation folded into the ACI thread after the rewrite.
+    val previousTarget = mutableMapOf<String, String>()
+    db.rawQuery("SELECT e164, aci FROM directory", emptyArray()).use { cursor ->
+      while (cursor.moveToNext()) {
+        previousTarget[cursor.getString(0)] = cursor.getString(1)
+      }
+    }
+    val merges = mutableListOf<Pair<String, String>>() // old PNI target -> new ACI target
     db.beginTransaction()
     try {
       db.delete("directory", null, null)
       for ((number, item) in results) {
-        // CDSI returns a PNI for every registered number, but the ACI only for contacts we've
-        // already interacted with (we pass no profile keys). Send to the ACI when we have it,
-        // otherwise to the PNI — that's how Signal starts a first conversation by phone number.
+        // CDSI returns a PNI for every registered number, but the ACI only for contacts whose
+        // profile key we could present. Send to the ACI when we have it, otherwise to the
+        // PNI — that's how Signal starts a first conversation by phone number.
         val aci = item.aci.orElse(null)
         val serviceId = (aci ?: item.pni) ?: continue
         val name = nameByNumber[number] ?: number
         upsert(db, number, serviceId.toString(), aci?.toString(), name)
         registered++
+        val previous = previousTarget[number]
+        if (aci != null && previous != null && previous != aci.toString() && previous.startsWith("PNI:")) {
+          merges += previous to aci.toString()
+        }
       }
       db.setTransactionSuccessful()
     } finally {
       db.endTransaction()
+    }
+    for ((pni, aci) in merges) {
+      if (AppDeps.messages.mergePniIntoAci(pni, aci)) {
+        Log.i(TAG, "Merged PNI conversation into ACI thread of ${aci.take(8)} after directory upgrade")
+      }
     }
     return registered
   }
