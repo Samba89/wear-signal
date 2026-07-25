@@ -40,6 +40,19 @@ AGPL-3.0-only, personal use.
   types show as a placeholder.
 - Delivery/read ticks on sent messages; no typing indicators; no sending of
   attachments or read receipts.
+- **Calls (audio-only, via RingRTC)**: place voice calls from any 1:1 thread (☎ next
+  to Reply) and answer calls that arrive while the app is draining the queue — the
+  watch rings with a full-screen incoming call UI. Video calls can be answered too:
+  the watch joins with the camera permanently off (the caller sees your avatar) and
+  incoming video is never rendered — audio only, both ways. Because the watch only
+  holds a connection during drains, calls ring live only when the app is open/polling
+  at that moment; anything older lands in the call history as a missed call.
+- **Call history**: missed/answered/declined calls appear as rows in threads and as
+  conversation previews, populated from drained 1:1 signaling and the phone's call
+  event sync messages. Missed calls notify on background polls (same
+  phone-covers-us suppression as messages). Group calls aren't joinable, but
+  conversations show an "Ongoing call" indicator once an SFU peek confirms
+  participants.
 
 ## Build
 

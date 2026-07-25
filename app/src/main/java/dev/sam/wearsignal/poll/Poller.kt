@@ -1,8 +1,11 @@
 package dev.sam.wearsignal.poll
 
 import dev.sam.wearsignal.AppDeps
+import dev.sam.wearsignal.calls.CallEngine
+import dev.sam.wearsignal.calls.CallLog
 import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.ProfileNameResolver
+import dev.sam.wearsignal.tile.Glanceables
 import org.signal.core.util.logging.Log
 
 /**
@@ -24,6 +27,10 @@ object Poller {
       Log.w(TAG, "Not linked; skipping poll")
       return Result.Failure("Not linked")
     }
+    if (CallEngine.isSessionActive) {
+      // The call session's signaling loop is draining the queue already.
+      return Result.Success(0)
+    }
 
     val newMessages = try {
       AppDeps.retriever.drainQueue()
@@ -36,14 +43,22 @@ object Poller {
       return Result.Failure("Couldn't connect")
     }
 
-    // Resolve names, group state, and photos for new senders, plus any contacts/groups
-    // still awaiting an avatar backfill (cheap no-op once everything is fetched).
-    val pendingAcis = newMessages.filterNot { it.fromSelf }.map { it.senderAci } + ProfileNameResolver.pendingAvatarAcis()
+    // Take even on silent drains: they swallow missed-call alerts the way they swallow messages.
+    val missedCalls = CallLog.takeUnnotifiedMissed()
+
+    // Resolve names, group state, and photos for new senders and callers, plus any
+    // contacts/groups still awaiting an avatar backfill (cheap no-op once fetched).
+    val pendingAcis = newMessages.filterNot { it.fromSelf }.map { it.senderAci } +
+      missedCalls.filterNot { it.isGroup }.map { it.peer } +
+      ProfileNameResolver.pendingAvatarAcis()
     val pendingGroups = newMessages.mapNotNull { it.groupId } + GroupStateResolver.pendingAvatarGroupIds()
     if (pendingAcis.isNotEmpty() || pendingGroups.isNotEmpty()) {
       ProfileNameResolver.resolvePending(pendingAcis)
       GroupStateResolver.resolvePending(pendingGroups)
-      AppDeps.net.authWebSocket.disconnect()
+      // A fresh offer drained above may have started a call session that owns the socket.
+      if (!CallEngine.isSessionActive) {
+        AppDeps.net.authWebSocket.disconnect()
+      }
     }
 
     // Contacts without a Signal profile photo fall back to their synced address-book photo.
@@ -54,7 +69,10 @@ object Poller {
 
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }
+      AppDeps.notifier.notifyMissedCalls(missedCalls) { aci -> resolveName(aci) }
     }
+
+    Glanceables.requestUpdate(AppDeps.context)
 
     return Result.Success(newMessages.size)
   }

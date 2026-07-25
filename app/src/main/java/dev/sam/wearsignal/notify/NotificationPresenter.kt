@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
+import dev.sam.wearsignal.calls.CallLog
 import dev.sam.wearsignal.messages.EnvelopeProcessor
 import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.attachmentPlaceholder
@@ -24,6 +25,7 @@ class NotificationPresenter(private val context: Context) {
   companion object {
     private val TAG = Log.tag(NotificationPresenter::class)
     private const val CHANNEL_ID = "messages"
+    private const val CALLS_CHANNEL_ID = "calls"
     const val KEY_REPLY_TEXT = "reply_text"
     const val EXTRA_PEER = "peer"
     const val EXTRA_IS_GROUP = "is_group"
@@ -35,7 +37,49 @@ class NotificationPresenter(private val context: Context) {
       enableVibration(true)
       description = "Signal messages received while away from phone"
     }
-    context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    val callsChannel = NotificationChannel(CALLS_CHANNEL_ID, "Missed calls", NotificationManager.IMPORTANCE_HIGH).apply {
+      enableVibration(true)
+      description = "Signal calls missed while away from phone"
+    }
+    context.getSystemService(NotificationManager::class.java).let {
+      it.createNotificationChannel(channel)
+      it.createNotificationChannel(callsChannel)
+    }
+  }
+
+  /** Missed-call notifications, mirroring message semantics (only when the phone isn't covering us). */
+  fun notifyMissedCalls(calls: List<CallLog.Entry>, nameResolver: (String) -> String) {
+    if (calls.isEmpty()) return
+    if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+      Log.w(TAG, "Notification permission not granted")
+      return
+    }
+
+    val contentIntent = PendingIntent.getActivity(
+      context,
+      0,
+      Intent(context, MainActivity::class.java),
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val manager = NotificationManagerCompat.from(context)
+    calls.takeLast(3).forEachIndexed { index, call ->
+      val who = if (call.isGroup) GroupStateResolver.cachedTitle(call.peer) ?: "Group" else nameResolver(call.peer)
+      val notification = NotificationCompat.Builder(context, CALLS_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.stat_notify_missed_call)
+        .setContentTitle(if (call.isVideo) "Missed video call" else "Missed call")
+        .setContentText(who)
+        .setWhen(call.startedAt)
+        .setShowWhen(true)
+        .setContentIntent(contentIntent)
+        .setAutoCancel(true)
+        .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .build()
+      // Distinct id space from message notifications (those use raw sentAt % MAX),
+      // so a call and a message with the same timestamp can't replace each other.
+      manager.notify("call:${call.startedAt}:$index".hashCode(), notification)
+    }
   }
 
   fun notify(messages: List<EnvelopeProcessor.IncomingMessage>, nameResolver: (String) -> String) {

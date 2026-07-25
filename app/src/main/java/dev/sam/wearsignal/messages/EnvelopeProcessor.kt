@@ -2,6 +2,8 @@ package dev.sam.wearsignal.messages
 
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.BuildConfig
+import dev.sam.wearsignal.calls.CallEngine
+import dev.sam.wearsignal.calls.CallLog
 import dev.sam.wearsignal.crypto.SessionLock
 import org.signal.core.models.ServiceId
 import org.signal.core.models.ServiceId.ACI
@@ -22,6 +24,7 @@ import org.whispersystems.signalservice.api.push.SignalServiceAddress
 import org.whispersystems.signalservice.internal.push.Content
 import org.whispersystems.signalservice.internal.push.DataMessage
 import org.whispersystems.signalservice.internal.push.Envelope
+import org.whispersystems.signalservice.internal.push.PniSignatureMessage
 import org.whispersystems.signalservice.internal.push.ReceiptMessage
 
 /**
@@ -114,8 +117,57 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       return null
     }
 
+    // Sent when we've been messaging this person's PNI: proof that the PNI and the sending ACI
+    // are the same account, which lets us fold the two conversations into one.
+    content.pniSignatureMessage?.let { handlePniSignature(sourceServiceId, it) }
+
+    content.callMessage?.let { call ->
+      // Device-targeted signaling meant for another of our devices (e.g. ICE for the
+      // phone's leg after it answered) must not leak into our engine or history.
+      val targetDevice = call.destinationDeviceId
+      if (targetDevice != null && targetDevice != account.deviceId) {
+        return null
+      }
+      // Fresh offers (and anything belonging to a live session) go straight into the
+      // calling engine so the watch can actually ring; everything else is history.
+      val sentAt = envelope.clientTimestamp ?: serverDeliveredTimestamp
+      val ageSec = ((serverDeliveredTimestamp - (envelope.serverTimestamp ?: serverDeliveredTimestamp)).coerceAtLeast(0)) / 1000
+      val handledLive = CallEngine.maybeHandleLive(
+        senderAci = sourceServiceId.toString(),
+        senderDeviceId = result.metadata.sourceDeviceId,
+        sentAt = sentAt,
+        ageSec = ageSec,
+        call = call
+      )
+      if (!handledLive) {
+        CallLog.handleCallMessage(
+          senderAci = sourceServiceId.toString(),
+          sentAt = sentAt,
+          call = call
+        )
+      }
+      return null
+    }
+
+    content.syncMessage?.callEvent?.let { event ->
+      CallLog.handleSyncCallEvent(event)
+      return null
+    }
+
     content.dataMessage?.let { data ->
       harvestProfileKey(sourceServiceId, data)
+      data.reaction?.let { reaction ->
+        val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+        applyReaction(reaction, peer = groupId ?: sourceServiceId.toString(), reacterAci = sourceServiceId.toString())
+        return null
+      }
+      data.groupCallUpdate?.eraId?.let { eraId ->
+        val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+        if (groupId != null) {
+          CallLog.recordGroupCallUpdate(groupId, eraId, data.timestamp ?: serverDeliveredTimestamp)
+        }
+        return null
+      }
       val body = data.body
       val attachment = data.attachments.firstOrNull()
       if (body.isNullOrEmpty() && attachment == null) {
@@ -134,8 +186,26 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       )
     }
 
+    content.syncMessage?.let { sync ->
+      // Read/viewed markers from our other devices (e.g. the message was read on the
+      // phone): those incoming messages are no longer unread on the watch either.
+      val markers = sync.read.map { ServiceId.parseOrNull(it.senderAci, it.senderAciBinary) to it.timestamp } +
+        sync.viewed.map { ServiceId.parseOrNull(it.senderAci, it.senderAciBinary) to it.timestamp }
+      if (markers.isNotEmpty()) {
+        markSeenFromSync(markers)
+      }
+    }
+
     content.syncMessage?.sent?.let { sent ->
       val data = sent.message ?: return null
+      data.reaction?.let { reaction ->
+        // A reaction we made on another device (the phone): apply it as our own.
+        val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+        val destination = ServiceId.parseOrNull(sent.destinationServiceId, sent.destinationServiceIdBinary)?.toString()
+        val peer = groupId ?: destination ?: return null
+        applyReaction(reaction, peer = peer, reacterAci = selfAci.toString())
+        return null
+      }
       val body = data.body
       val attachment = data.attachments.firstOrNull()
       if (body.isNullOrEmpty() && attachment == null) {
@@ -202,6 +272,68 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
           arrayOf(now, sentAt)
         )
       }
+    }
+  }
+
+  /**
+   * Verifies a PNI signature (the PNI identity key signing the ACI identity key) and, if valid,
+   * merges the PNI conversation into the sender's ACI thread. Both identity keys must already be
+   * in the store: the PNI's from when we sent to it, the ACI's from decrypting this envelope.
+   */
+  private fun handlePniSignature(sender: ServiceId, message: PniSignatureMessage) {
+    if (sender !is ACI) return
+    val pni = PNI.parseOrNull(message.pni) ?: return
+    val signature = message.signature?.toByteArray() ?: return
+    if (pni.toString() == sender.toString()) return
+
+    val store = AppDeps.aciProtocolStore
+    val pniIdentity = store.getIdentity(SignalProtocolAddress(pni.toString(), 1)) ?: return // never messaged that PNI
+    val aciIdentity = store.getIdentity(SignalProtocolAddress(sender.toString(), 1)) ?: return
+    if (!pniIdentity.verifyAlternateIdentity(aciIdentity, signature)) {
+      Log.w(TAG, "PNI signature from ${sender.toString().take(8)} did not verify; not merging")
+      return
+    }
+
+    if (messages.mergePniIntoAci(pni.toString(), sender.toString())) {
+      Log.i(TAG, "Merged PNI conversation into ACI thread of ${sender.toString().take(8)}")
+    }
+  }
+
+  /** Applies synced read/viewed markers: (sender, sent timestamp) pairs identify the messages. */
+  private fun markSeenFromSync(markers: List<Pair<ServiceId?, Long?>>) {
+    val db = AppDeps.database.writableDatabase
+    val now = System.currentTimeMillis()
+    for ((sender, timestamp) in markers) {
+      if (timestamp == null) continue
+      if (sender != null) {
+        db.execSQL(
+          "UPDATE messages SET seen_at = ? WHERE from_self = 0 AND seen_at = 0 AND sent_at = ? AND sender_aci = ?",
+          arrayOf(now, timestamp, sender.toString())
+        )
+      } else {
+        db.execSQL(
+          "UPDATE messages SET seen_at = ? WHERE from_self = 0 AND seen_at = 0 AND sent_at = ?",
+          arrayOf(now, timestamp)
+        )
+      }
+    }
+  }
+
+  /** Applies [reacterAci]'s reaction in conversation [peer]; the target message may not exist here. */
+  private fun applyReaction(reaction: DataMessage.Reaction, peer: String, reacterAci: String) {
+    val targetAuthor = ServiceId.parseOrNull(reaction.targetAuthorAci, reaction.targetAuthorAciBinary)?.toString() ?: return
+    val targetSentAt = reaction.targetSentTimestamp ?: return
+    val emoji = reaction.emoji ?: return
+    val applied = messages.applyReaction(
+      peer = peer,
+      targetSentAt = targetSentAt,
+      targetAuthorAci = targetAuthor,
+      reacterAci = reacterAci,
+      emoji = emoji,
+      remove = reaction.remove == true
+    )
+    if (!applied && reaction.remove != true) {
+      Log.i(TAG, "Dropping reaction to a message we don't have (ts=$targetSentAt)")
     }
   }
 

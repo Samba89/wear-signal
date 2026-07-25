@@ -8,11 +8,13 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 6) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 9) {
 
   override fun onCreate(db: SQLiteDatabase) {
     createDirectoryTable(db)
     createGroupsTable(db)
+    createReactionsTable(db)
+    createCallsTable(db)
     db.execSQL(
       """
       CREATE TABLE identities (
@@ -107,7 +109,8 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         read_at INTEGER NOT NULL DEFAULT 0,
         attachment_type TEXT,
         attachment_pointer BLOB,
-        attachment_path TEXT
+        attachment_path TEXT,
+        seen_at INTEGER NOT NULL DEFAULT 0
       )
       """
     )
@@ -141,7 +144,10 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
       // Avatar fetches are tracked separately from name/state fetches so contacts and
       // groups that are already "fresh" still get their photo backfilled once.
       db.execSQL("ALTER TABLE contacts ADD COLUMN avatar_fetched_at INTEGER NOT NULL DEFAULT 0")
-      db.execSQL("ALTER TABLE groups ADD COLUMN avatar_fetched_at INTEGER NOT NULL DEFAULT 0")
+      if (oldVersion >= 3) {
+        // A groups table created by the v<3 step above already has this column.
+        db.execSQL("ALTER TABLE groups ADD COLUMN avatar_fetched_at INTEGER NOT NULL DEFAULT 0")
+      }
     }
     if (oldVersion < 5) {
       // Delivery/read receipt status for our own sent messages (matched by sent_at).
@@ -155,6 +161,67 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
       db.execSQL("ALTER TABLE messages ADD COLUMN attachment_pointer BLOB")
       db.execSQL("ALTER TABLE messages ADD COLUMN attachment_path TEXT")
     }
+    if (oldVersion < 7) {
+      // When an incoming message stopped being unread: read on the phone (synced via
+      // SyncMessage.read/viewed) or its thread viewed here. Existing rows start seen
+      // so the upgrade doesn't declare the whole history unread.
+      db.execSQL("ALTER TABLE messages ADD COLUMN seen_at INTEGER NOT NULL DEFAULT 0")
+      db.execSQL("UPDATE messages SET seen_at = ${System.currentTimeMillis()} WHERE from_self = 0")
+    }
+    if (oldVersion < 8) {
+      createReactionsTable(db)
+    }
+    if (oldVersion < 9) {
+      createCallsTable(db)
+      if (oldVersion >= 3) {
+        // A groups table created by the v<3 step above already has these columns.
+        db.execSQL("ALTER TABLE groups ADD COLUMN active_era TEXT")
+        db.execSQL("ALTER TABLE groups ADD COLUMN active_era_at INTEGER NOT NULL DEFAULT 0")
+      }
+    }
+  }
+
+  /**
+   * Emoji reactions, keyed the way Signal identifies a message everywhere: target author + sent
+   * timestamp. One row per reacter per message — a person's new reaction replaces their old one.
+   */
+  private fun createReactionsTable(db: SQLiteDatabase) {
+    db.execSQL(
+      """
+      CREATE TABLE reactions (
+        peer TEXT NOT NULL,
+        target_sent_at INTEGER NOT NULL,
+        target_author_aci TEXT NOT NULL,
+        reacter_aci TEXT NOT NULL,
+        emoji TEXT NOT NULL,
+        at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (target_sent_at, target_author_aci, reacter_aci)
+      )
+      """
+    )
+  }
+
+  /**
+   * Call history, keyed by Signal's call id within a conversation. Populated from drained
+   * 1:1 call signaling and the phone's CallEvent sync messages (see CallLog).
+   */
+  private fun createCallsTable(db: SQLiteDatabase) {
+    db.execSQL(
+      """
+      CREATE TABLE calls (
+        _id INTEGER PRIMARY KEY AUTOINCREMENT,
+        call_id INTEGER NOT NULL,
+        peer TEXT NOT NULL,
+        is_group INTEGER NOT NULL DEFAULT 0,
+        is_video INTEGER NOT NULL DEFAULT 0,
+        outgoing INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        notified INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (peer, call_id)
+      )
+      """
+    )
   }
 
   /** GroupsV2 state cache: master key harvested from message contexts, title/members fetched from the group server. */
@@ -168,7 +235,9 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         title TEXT,
         members TEXT,
         fetched_at INTEGER NOT NULL DEFAULT 0,
-        avatar_fetched_at INTEGER NOT NULL DEFAULT 0
+        avatar_fetched_at INTEGER NOT NULL DEFAULT 0,
+        active_era TEXT,
+        active_era_at INTEGER NOT NULL DEFAULT 0
       )
       """
     )

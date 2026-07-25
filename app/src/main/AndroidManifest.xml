@@ -15,6 +15,17 @@
     <!-- Read the watch's synced contacts to offer them as message recipients (resolved to Signal accounts via CDSI). -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Calling: RingRTC audio-only calls over the watch's mic and speaker. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- Prerequisite for the phoneCall foreground-service type without Telecom integration. -->
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <application
         android:name=".WearSignalApp"
         android:label="WearSignal"
@@ -28,6 +39,20 @@
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
+
+        <service
+            android:name=".calls.CallSessionService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall|microphone" />
+
+        <activity
+            android:name=".ui.CallActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@android:style/Theme.DeviceDefault" />
 
         <receiver
             android:name=".poll.PollReceiver"
@@ -44,6 +69,36 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name=".tile.RecentTileService"
+            android:label="Signal"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_launcher_foreground" />
+        </service>
+
+        <service
+            android:name=".complication.UnreadComplicationService"
+            android:label="Signal unread"
+            android:exported="true"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <!-- Push-only: Glanceables.requestUpdate refreshes it after each poll. -->
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
 
         <activity
             android:name=".ui.MainActivity"

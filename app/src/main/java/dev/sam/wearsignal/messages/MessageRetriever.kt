@@ -25,7 +25,9 @@ class MessageRetriever(private val processor: EnvelopeProcessor) {
 
       var attempts = 0
       var hasMore = true
-      while (hasMore && attempts < 100) {
+      // Stop early once a drained offer starts a call session: its signaling loop
+      // becomes the socket's reader and this drain must get out of its way.
+      while (hasMore && attempts < 100 && !dev.sam.wearsignal.calls.CallEngine.isSessionActive) {
         attempts++
         hasMore = try {
           webSocket.readMessageBatch(READ_TIMEOUT_MS, BATCH_SIZE) { batch ->
@@ -50,7 +52,10 @@ class MessageRetriever(private val processor: EnvelopeProcessor) {
       }
       Log.i(TAG, "Drained queue: ${collected.size} new message(s) over $attempts batch(es)")
     } finally {
-      webSocket.disconnect()
+      // A drained fresh offer may have just started a call session that owns the socket now.
+      if (!dev.sam.wearsignal.calls.CallEngine.isSessionActive) {
+        webSocket.disconnect()
+      }
     }
 
     AppDeps.account.lastPollAt = System.currentTimeMillis()

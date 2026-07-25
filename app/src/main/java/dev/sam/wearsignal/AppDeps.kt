@@ -23,13 +23,18 @@ object AppDeps {
     appContext = context.applicationContext
   }
 
+  /** For components without their own Context (e.g. Poller pushing tile/complication updates). */
+  val context: Context
+    get() = appContext
+
   val account: AccountStore by lazy { AccountStore(appContext) }
   val database: WatchDatabase by lazy { WatchDatabase(appContext) }
   val net: SignalNet by lazy { SignalNet(appContext, account) }
   val aciProtocolStore: WatchProtocolStore by lazy { WatchProtocolStore(database, account, "aci") }
   val pniProtocolStore: WatchProtocolStore by lazy { WatchProtocolStore(database, account, "pni") }
   val messages: MessagesRepository by lazy { MessagesRepository(database) }
-  val retriever: MessageRetriever by lazy { MessageRetriever(EnvelopeProcessor(messages)) }
+  val envelopeProcessor: EnvelopeProcessor by lazy { EnvelopeProcessor(messages) }
+  val retriever: MessageRetriever by lazy { MessageRetriever(envelopeProcessor) }
   val notifier: NotificationPresenter by lazy { NotificationPresenter(appContext) }
   val avatars: AvatarStore by lazy { AvatarStore(appContext) }
   val attachments: AttachmentStore by lazy { AttachmentStore(appContext) }

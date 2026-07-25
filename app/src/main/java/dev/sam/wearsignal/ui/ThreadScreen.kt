@@ -2,13 +2,17 @@ package dev.sam.wearsignal.ui
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,7 +21,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +45,10 @@ import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import dev.sam.wearsignal.calls.CallLog
 import dev.sam.wearsignal.messages.MessageRow
 import dev.sam.wearsignal.messages.attachmentPlaceholder
+import dev.sam.wearsignal.messages.callLabel
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -48,9 +57,13 @@ import java.util.Locale
 
 private val INCOMING_BUBBLE = Color(0xFF2C2C2E)
 
+/** The fixed reaction palette (Signal's defaults) — a full emoji picker is unusable at watch size. */
+private val REACTION_EMOJIS = listOf("❤️", "👍", "👎", "😂", "😮", "😢")
+
 /**
  * One conversation as a chat: own messages right in the accent colour, incoming left;
  * group messages carry the sender's avatar and colour. Opens scrolled to the latest.
+ * Long-pressing a bubble opens the reaction palette.
  */
 @Composable
 fun ThreadScreen(
@@ -59,71 +72,176 @@ fun ThreadScreen(
   messages: List<MessageRow>,
   polling: Boolean,
   pollStatus: String?,
+  activeCallCount: Int? = null,
   onPoll: () -> Unit,
-  onReply: () -> Unit
+  onReply: () -> Unit,
+  onReact: (MessageRow, String) -> Unit,
+  onReactCustom: (MessageRow) -> Unit,
+  onCall: (() -> Unit)? = null
 ) {
-  // items: title + messages + reply chip; messages load asynchronously,
-  // so scroll to the latest when they arrive rather than at creation
+  // items: title (+ ongoing-call banner) + messages + reply chip; messages load
+  // asynchronously, so scroll to the latest when they arrive rather than at creation
   val listState = rememberScalingLazyListState()
-  LaunchedEffect(messages.size) {
+  LaunchedEffect(messages.size, activeCallCount != null) {
     if (messages.isNotEmpty()) {
-      listState.scrollToItem(messages.size + 1)
+      val leadingItems = if (activeCallCount != null) 2 else 1
+      listState.scrollToItem(messages.size + leadingItems)
     }
   }
 
-  ScalingLazyColumn(state = listState) {
-    item {
-      Text(
-        text = if (isGroup) "$title 👥" else title,
-        style = MaterialTheme.typography.title3,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-      )
-    }
+  var reactingTo by remember { mutableStateOf<MessageRow?>(null) }
 
-    items(messages.size) { i ->
-      val message = messages[i]
-      // Collapse repeated sender chrome when the same person sends several in a row.
-      val firstOfRun = i == 0 || messages[i - 1].senderAci != message.senderAci
-      Column {
-        if (i == 0 || !sameDay(messages[i - 1].sentAt, message.sentAt)) {
-          DayDivider(message.sentAt)
-        }
-        MessageBubble(message = message, isGroup = isGroup, showSender = firstOfRun)
-      }
-    }
-
-    if (pollStatus != null && !polling) {
+  Box(modifier = Modifier.fillMaxSize()) {
+    ScalingLazyColumn(state = listState) {
       item {
         Text(
-          text = "⚠ $pollStatus",
-          style = MaterialTheme.typography.caption3,
-          color = Color(0xFFFFAB91),
+          text = if (isGroup) "$title 👥" else title,
+          style = MaterialTheme.typography.title3,
           textAlign = TextAlign.Center,
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )
       }
-    }
 
-    item {
-      Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-        Chip(
-          label = { Text("Reply") },
-          onClick = onReply,
-          colors = ChipDefaults.primaryChipColors(),
-          modifier = Modifier.weight(1f)
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Button(
-          onClick = onPoll,
-          enabled = !polling,
-          colors = ButtonDefaults.secondaryButtonColors(),
-          modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
-        ) {
-          Text(if (polling) "…" else "⟳")
+      if (activeCallCount != null) {
+        item {
+          Text(
+            text = "📞 Ongoing call · $activeCallCount in call",
+            style = MaterialTheme.typography.caption2,
+            color = Color(0xFF69F0AE),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+          )
+        }
+      }
+
+      items(messages.size) { i ->
+        val message = messages[i]
+        // Collapse repeated sender chrome when the same person sends several in a row.
+        val firstOfRun = i == 0 || messages[i - 1].senderAci != message.senderAci || messages[i - 1].call != null
+        Column {
+          if (i == 0 || !sameDay(messages[i - 1].sentAt, message.sentAt)) {
+            DayDivider(message.sentAt)
+          }
+          if (message.call != null) {
+            CallEventRow(message)
+          } else {
+            MessageBubble(
+              message = message,
+              isGroup = isGroup,
+              showSender = firstOfRun,
+              onLongPress = { reactingTo = message }
+            )
+          }
+        }
+      }
+
+      if (pollStatus != null && !polling) {
+        item {
+          Text(
+            text = "⚠ $pollStatus",
+            style = MaterialTheme.typography.caption3,
+            color = Color(0xFFFFAB91),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+          )
+        }
+      }
+
+      item {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+          Chip(
+            label = { Text("Reply") },
+            onClick = onReply,
+            colors = ChipDefaults.primaryChipColors(),
+            modifier = Modifier.weight(1f)
+          )
+          if (onCall != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Button(
+              onClick = onCall,
+              colors = ButtonDefaults.secondaryButtonColors(),
+              modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+            ) {
+              Text("☎")
+            }
+          }
+          Spacer(modifier = Modifier.width(4.dp))
+          Button(
+            onClick = onPoll,
+            enabled = !polling,
+            colors = ButtonDefaults.secondaryButtonColors(),
+            modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+          ) {
+            Text(if (polling) "…" else "⟳")
+          }
         }
       }
     }
+
+    reactingTo?.let { message ->
+      ReactionPalette(
+        myReaction = message.myReaction,
+        onPick = { emoji ->
+          reactingTo = null
+          onReact(message, emoji)
+        },
+        onPickCustom = {
+          reactingTo = null
+          onReactCustom(message)
+        },
+        onDismiss = { reactingTo = null }
+      )
+    }
+  }
+}
+
+/**
+ * Full-screen overlay with the reaction palette. Our current reaction is highlighted;
+ * picking it again retracts it (the caller derives remove from [myReaction]).
+ * ＋ opens the system input for any other emoji; a current reaction from outside
+ * the palette shows next to it so it stays retractable.
+ */
+@Composable
+private fun ReactionPalette(
+  myReaction: String?,
+  onPick: (String) -> Unit,
+  onPickCustom: () -> Unit,
+  onDismiss: () -> Unit
+) {
+  Box(
+    modifier = Modifier.fillMaxSize().background(Color(0xE6000000)).clickable(onClick = onDismiss),
+    contentAlignment = Alignment.Center
+  ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+      REACTION_EMOJIS.chunked(3).forEach { rowEmojis ->
+        Row {
+          rowEmojis.forEach { emoji ->
+            PaletteButton(
+              label = emoji,
+              highlighted = emoji == myReaction,
+              onClick = { onPick(emoji) }
+            )
+          }
+        }
+      }
+      Row {
+        if (myReaction != null && myReaction !in REACTION_EMOJIS) {
+          PaletteButton(label = myReaction, highlighted = true, onClick = { onPick(myReaction) })
+        }
+        PaletteButton(label = "＋", highlighted = false, onClick = onPickCustom)
+      }
+    }
+  }
+}
+
+@Composable
+private fun PaletteButton(label: String, highlighted: Boolean, onClick: () -> Unit) {
+  Button(
+    onClick = onClick,
+    colors = if (highlighted) ButtonDefaults.primaryButtonColors() else ButtonDefaults.secondaryButtonColors(),
+    modifier = Modifier.padding(3.dp).size(44.dp)
+  ) {
+    Text(text = label, style = MaterialTheme.typography.title3)
   }
 }
 
@@ -192,6 +310,26 @@ private fun AttachmentContent(message: MessageRow, contentColor: Color, modifier
   }
 }
 
+/** A call event as a centered pill: "☎ Missed call · 14:03", missed in warning red. */
+@Composable
+private fun CallEventRow(message: MessageRow) {
+  val call = message.call ?: return
+  val missed = call.outcome == CallLog.OUTCOME_MISSED && !call.outgoing
+  val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.sentAt))
+  Box(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+    Text(
+      text = "${if (call.isVideo) "📹" else "☎"} ${callLabel(call)} · $time",
+      style = MaterialTheme.typography.caption2,
+      color = if (missed) Color(0xFFFF8A80) else Color(0xFF9E9E9E),
+      modifier = Modifier
+        .align(Alignment.Center)
+        .clip(RoundedCornerShape(10.dp))
+        .background(INCOMING_BUBBLE)
+        .padding(horizontal = 8.dp, vertical = 3.dp)
+    )
+  }
+}
+
 private fun sameDay(a: Long, b: Long): Boolean {
   val calA = Calendar.getInstance().apply { timeInMillis = a }
   val calB = Calendar.getInstance().apply { timeInMillis = b }
@@ -210,8 +348,9 @@ private fun DayDivider(at: Long) {
   )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boolean) {
+private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boolean, onLongPress: () -> Unit) {
   val fromSelf = message.fromSelf
   val bubbleShape = if (fromSelf) {
     RoundedCornerShape(14.dp, 14.dp, 4.dp, 14.dp)
@@ -248,6 +387,7 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
           modifier = Modifier
             .clip(bubbleShape)
             .background(if (fromSelf) MaterialTheme.colors.primary else INCOMING_BUBBLE)
+            .combinedClickable(onClick = {}, onLongClick = onLongPress)
             .padding(horizontal = 8.dp, vertical = 5.dp)
         ) {
           val contentColor = if (fromSelf) MaterialTheme.colors.onPrimary else Color.White
@@ -275,6 +415,22 @@ private fun MessageBubble(message: MessageRow, isGroup: Boolean, showSender: Boo
                 read = message.read,
                 color = contentColor,
                 knockout = MaterialTheme.colors.primary
+              )
+            }
+          }
+        }
+        if (message.reactions.isNotEmpty()) {
+          Row(modifier = Modifier.padding(top = 1.dp).align(if (fromSelf) Alignment.End else Alignment.Start)) {
+            message.reactions.forEach { reaction ->
+              Text(
+                text = if (reaction.count > 1) "${reaction.emoji} ${reaction.count}" else reaction.emoji,
+                style = MaterialTheme.typography.caption3,
+                color = Color.White,
+                modifier = Modifier
+                  .padding(end = 2.dp)
+                  .clip(RoundedCornerShape(8.dp))
+                  .background(if (reaction.mine) MaterialTheme.colors.primaryVariant else INCOMING_BUBBLE)
+                  .padding(horizontal = 4.dp, vertical = 1.dp)
               )
             }
           }

@@ -116,16 +116,38 @@ object GroupStateResolver {
     }
   }
 
-  /** Cached member ACIs for a group (excluding self), or null if the state was never fetched. */
-  fun cachedMembers(groupId: String): List<String>? {
-    val selfAci = AppDeps.account.aci?.toString()
+  /** Today's zkgroup auth credential (network fetch — call while the websocket is usable). */
+  fun todaysCredential(): AuthCredentialWithPniResponse? = fetchTodaysCredential()
+
+  /** GroupsV2 authorization for [secretParams] from a [todaysCredential] result. */
+  fun authorizationString(
+    secretParams: GroupSecretParams,
+    credential: AuthCredentialWithPniResponse
+  ): org.whispersystems.signalservice.api.groupsv2.GroupsV2AuthorizationString {
+    return AppDeps.net.groupsV2Api.getGroupsV2AuthorizationString(
+      AppDeps.account.aci,
+      AppDeps.account.pni,
+      todaySeconds(),
+      secretParams,
+      credential
+    )
+  }
+
+  /** Cached member ACIs for a group including self, or null if the state was never fetched. */
+  fun cachedAllMembers(groupId: String): List<String>? {
     AppDeps.database.readableDatabase.rawQuery(
       "SELECT members FROM groups WHERE group_id = ?",
       arrayOf(groupId)
     ).use { cursor ->
       if (!cursor.moveToFirst() || cursor.isNull(0)) return null
-      return cursor.getString(0).split(",").filter { it.isNotEmpty() && it != selfAci }
+      return cursor.getString(0).split(",").filter { it.isNotEmpty() }
     }
+  }
+
+  /** Cached member ACIs for a group (excluding self), or null if the state was never fetched. */
+  fun cachedMembers(groupId: String): List<String>? {
+    val selfAci = AppDeps.account.aci?.toString()
+    return cachedAllMembers(groupId)?.filter { it != selfAci }
   }
 
   fun cachedTitle(groupId: String): String? {

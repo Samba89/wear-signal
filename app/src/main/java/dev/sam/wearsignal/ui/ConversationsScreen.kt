@@ -30,6 +30,7 @@ fun ConversationsScreen(
   hasMore: Boolean,
   polling: Boolean,
   pollStatus: String?,
+  activeCalls: Map<String, Int> = emptyMap(),
   onPoll: () -> Unit,
   onLoadMore: () -> Unit,
   onOpen: (ConversationRow) -> Unit,
@@ -86,8 +87,15 @@ fun ConversationsScreen(
               maxLines = 1,
               overflow = TextOverflow.Ellipsis
             )
+            if (conversation.peer in activeCalls) {
+              Text(
+                text = "📞 Ongoing call",
+                style = MaterialTheme.typography.caption2,
+                color = Color(0xFF69F0AE)
+              )
+            }
             Text(
-              text = if (conversation.isGroup || conversation.lastFromSelf) {
+              text = if ((conversation.isGroup || conversation.lastFromSelf) && conversation.lastSender.isNotEmpty()) {
                 "${conversation.lastSender}: ${conversation.lastBody}"
               } else {
                 conversation.lastBody

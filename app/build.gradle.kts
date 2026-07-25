@@ -43,6 +43,7 @@ android {
     buildConfigField("String", "SIGNAL_CDN3_URL", "\"https://cdn3.signal.org\"")
     buildConfigField("String", "SIGNAL_CDSI_URL", "\"https://cdsi.signal.org\"")
     buildConfigField("String", "SIGNAL_SVR2_URL", "\"https://svr2.signal.org\"")
+    buildConfigField("String", "SIGNAL_SFU_URL", "\"https://sfu.voip.signal.org\"")
     buildConfigField("String", "SIGNAL_AGENT", "\"OWA\"")
     buildConfigField("String[]", "UNIDENTIFIED_SENDER_TRUST_ROOTS", "new String[]{ \"BXu6QIKVz5MA8gstzfOgRQGqyLqOwNKHL6INkv3IHWMF\", \"BUkY0I+9+oPgDCn4+Ac6Iu813yvqkDr/ga8DzLxFxuk6\"}")
     buildConfigField("String", "ZKGROUP_SERVER_PUBLIC_PARAMS", "\"AMhf5ywVwITZMsff/eCyudZx9JDmkkkbV6PInzG4p8x3VqVJSFiMvnvlEKWuRob/1eaIetR31IYeAbm0NdOuHH8Qi+Rexi1wLlpzIo1gstHWBfZzy1+qHRV5A4TqPp15YzBPm0WSggW6PbSn+F4lf57VCnHF7p8SvzAA2ZZJPYJURt8X7bbg+H3i+PEjH9DXItNEqs2sNcug37xZQDLm7X36nOoGPs54XsEGzPdEV+itQNGUFEjY6X9Uv+Acuks7NpyGvCoKxGwgKgE5XyJ+nNKlyHHOLb6N1NuHyBrZrgtY/JYJHRooo5CEqYKBqdFnmbTVGEkCvJKxLnjwKWf+fEPoWeQFj5ObDjcKMZf2Jm2Ae69x+ikU5gBXsRmoF94GXTLfN0/vLt98KDPnxwAQL9j5V1jGOY8jQl6MLxEs56cwXN0dqCnImzVH3TZT1cJ8SW1BRX6qIVxEzjsSGx3yxF3suAilPMqGRp4ffyopjMD1JXiKR2RwLKzizUe5e8XyGOy9fplzhw3jVzTRyUZTRSZKkMLWcQ/gv0E4aONNqs4P+NameAZYOD12qRkxosQQP5uux6B2nRyZ7sAV54DgFyLiRcq1FvwKw2EPQdk4HDoePrO/RNUbyNddnM/mMgj4FW65xCoT1LmjrIjsv/Ggdlx46ueczhMgtBunx1/w8k8V+l8LVZ8gAT6wkU5J+DPQalQguMg12Jzug3q4TbdHiGCmD9EunCwOmsLuLJkz6EcSYXtrlDEnAM+hicw7iergYLLlMXpfTdGxJCWJmP4zqUFeTTmsmhsjGBt7NiEB/9pFFEB3pSbf4iiUukw63Eo8Aqnf4iwob6X1QviCWuc8t0LUlT9vALgh/f2DPVOOmR0RW6bgRvc7DSF20V/omg+YBw==\"")
@@ -139,6 +140,8 @@ dependencies {
   implementation(project(":core:network"))
 
   implementation(libs.libsignal.android)
+  // Signal's calling engine (bundles org.webrtc classes and native libs for all our ABIs).
+  implementation(libs.ringrtc.android)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.play.services)
 
@@ -152,4 +155,8 @@ dependencies {
   implementation(libs.playservices.wearable)
   implementation(libs.zxing.core)
   implementation(libs.work.runtime)
+  implementation(libs.wear.tiles)
+  implementation(libs.wear.protolayout)
+  implementation(libs.watchface.complications.datasource.ktx)
+  implementation(libs.androidx.concurrent.futures)
 }
