@@ -29,6 +29,7 @@ fun ConversationsScreen(
   conversations: List<ConversationRow>,
   hasMore: Boolean,
   polling: Boolean,
+  pollProgress: String?,
   pollStatus: String?,
   onPoll: () -> Unit,
   onLoadMore: () -> Unit,
@@ -39,7 +40,7 @@ fun ConversationsScreen(
   ScalingLazyColumn {
     item {
       Chip(
-        label = { Text(if (polling) "Checking…" else "Check for messages") },
+        label = { Text(if (polling) pollProgress ?: "Checking…" else "Check for messages") },
         onClick = onPoll,
         colors = ChipDefaults.primaryChipColors(),
         modifier = Modifier.fillMaxWidth()

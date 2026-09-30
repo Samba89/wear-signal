@@ -58,6 +58,7 @@ fun ThreadScreen(
   isGroup: Boolean,
   messages: List<MessageRow>,
   polling: Boolean,
+  pollProgress: String?,
   pollStatus: String?,
   onPoll: () -> Unit,
   onReply: () -> Unit
@@ -93,12 +94,18 @@ fun ThreadScreen(
       }
     }
 
-    if (pollStatus != null && !polling) {
+    // One status line above the buttons: live progress while checking, else the last failure.
+    val statusLine = when {
+      polling -> pollProgress ?: "Checking…"
+      pollStatus != null -> "⚠ $pollStatus"
+      else -> null
+    }
+    if (statusLine != null) {
       item {
         Text(
-          text = "⚠ $pollStatus",
+          text = statusLine,
           style = MaterialTheme.typography.caption3,
-          color = Color(0xFFFFAB91),
+          color = if (polling) Color(0xFF9E9E9E) else Color(0xFFFFAB91),
           textAlign = TextAlign.Center,
           modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
         )

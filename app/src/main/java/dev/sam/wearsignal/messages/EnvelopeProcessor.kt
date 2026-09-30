@@ -164,9 +164,9 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     return null
   }
 
-  /** Store an IncomingMessage and return whether it should notify (own sent messages shouldn't). */
-  fun store(message: IncomingMessage) {
-    messages.insert(
+  /** Stores an IncomingMessage; false if it was a duplicate of one already stored. */
+  fun store(message: IncomingMessage): Boolean {
+    return messages.insert(
       peer = message.peer,
       senderAci = message.senderAci,
       groupId = message.groupId,
