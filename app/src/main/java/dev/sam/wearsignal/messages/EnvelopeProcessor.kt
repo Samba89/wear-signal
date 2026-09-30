@@ -121,6 +121,11 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
 
     content.dataMessage?.let { data ->
       harvestProfileKey(sourceServiceId, data)
+      data.reaction?.let { reaction ->
+        val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+        applyReaction(reaction, peer = groupId ?: sourceServiceId.toString(), reacterAci = sourceServiceId.toString())
+        return null
+      }
       val body = data.body
       val attachment = data.attachments.firstOrNull()
       if (body.isNullOrEmpty() && attachment == null) {
@@ -151,6 +156,14 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
 
     content.syncMessage?.sent?.let { sent ->
       val data = sent.message ?: return null
+      data.reaction?.let { reaction ->
+        // A reaction we made on another device (the phone): apply it as our own.
+        val groupId = data.groupV2?.let { recordGroup(it.masterKey!!.toByteArray(), it.revision ?: 0) }
+        val destination = ServiceId.parseOrNull(sent.destinationServiceId, sent.destinationServiceIdBinary)?.toString()
+        val peer = groupId ?: destination ?: return null
+        applyReaction(reaction, peer = peer, reacterAci = selfAci.toString())
+        return null
+      }
       val body = data.body
       val attachment = data.attachments.firstOrNull()
       if (body.isNullOrEmpty() && attachment == null) {
@@ -261,6 +274,24 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
           arrayOf(now, timestamp)
         )
       }
+    }
+  }
+
+  /** Applies [reacterAci]'s reaction in conversation [peer]; the target message may not exist here. */
+  private fun applyReaction(reaction: DataMessage.Reaction, peer: String, reacterAci: String) {
+    val targetAuthor = ServiceId.parseOrNull(reaction.targetAuthorAci, reaction.targetAuthorAciBinary)?.toString() ?: return
+    val targetSentAt = reaction.targetSentTimestamp ?: return
+    val emoji = reaction.emoji ?: return
+    val applied = messages.applyReaction(
+      peer = peer,
+      targetSentAt = targetSentAt,
+      targetAuthorAci = targetAuthor,
+      reacterAci = reacterAci,
+      emoji = emoji,
+      remove = reaction.remove == true
+    )
+    if (!applied && reaction.remove != true) {
+      Log.i(TAG, "Dropping reaction to a message we don't have (ts=$targetSentAt)")
     }
   }
 
