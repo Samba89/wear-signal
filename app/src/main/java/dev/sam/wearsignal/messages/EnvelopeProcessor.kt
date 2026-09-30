@@ -22,6 +22,7 @@ import org.whispersystems.signalservice.api.push.SignalServiceAddress
 import org.whispersystems.signalservice.internal.push.Content
 import org.whispersystems.signalservice.internal.push.DataMessage
 import org.whispersystems.signalservice.internal.push.Envelope
+import org.whispersystems.signalservice.internal.push.PniSignatureMessage
 import org.whispersystems.signalservice.internal.push.ReceiptMessage
 
 /**
@@ -114,6 +115,10 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       return null
     }
 
+    // Sent when we've been messaging this person's PNI: proof that the PNI and the sending ACI
+    // are the same account, which lets us fold the two conversations into one.
+    content.pniSignatureMessage?.let { handlePniSignature(sourceServiceId, it) }
+
     content.dataMessage?.let { data ->
       harvestProfileKey(sourceServiceId, data)
       val body = data.body
@@ -202,6 +207,30 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
           arrayOf(now, sentAt)
         )
       }
+    }
+  }
+
+  /**
+   * Verifies a PNI signature (the PNI identity key signing the ACI identity key) and, if valid,
+   * merges the PNI conversation into the sender's ACI thread. Both identity keys must already be
+   * in the store: the PNI's from when we sent to it, the ACI's from decrypting this envelope.
+   */
+  private fun handlePniSignature(sender: ServiceId, message: PniSignatureMessage) {
+    if (sender !is ACI) return
+    val pni = PNI.parseOrNull(message.pni) ?: return
+    val signature = message.signature?.toByteArray() ?: return
+    if (pni.toString() == sender.toString()) return
+
+    val store = AppDeps.aciProtocolStore
+    val pniIdentity = store.getIdentity(SignalProtocolAddress(pni.toString(), 1)) ?: return // never messaged that PNI
+    val aciIdentity = store.getIdentity(SignalProtocolAddress(sender.toString(), 1)) ?: return
+    if (!pniIdentity.verifyAlternateIdentity(aciIdentity, signature)) {
+      Log.w(TAG, "PNI signature from ${sender.toString().take(8)} did not verify; not merging")
+      return
+    }
+
+    if (messages.mergePniIntoAci(pni.toString(), sender.toString())) {
+      Log.i(TAG, "Merged PNI conversation into ACI thread of ${sender.toString().take(8)}")
     }
   }
 
