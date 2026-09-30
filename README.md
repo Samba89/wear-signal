@@ -2,13 +2,21 @@
 
 A vibe-coded Signal app I made for WearOS, so I can send a message to somebody without a phone. Tested on a Pixel Watch 4.
 
-A compact Signal client for Wear OS. It links to your existing Signal account as a
-**linked device** (like Signal Desktop) so an LTE watch can read and reply to
-conversations — and optionally show notifications — while your phone stays at home.
+It links to your existing Signal account as a **linked device** (like Signal Desktop) so an LTE watch can read and reply to
+conversations while your phone stays at home.
 
-Built against vendored modules from [Signal-Android](https://github.com/signalapp/Signal-Android)
-v8.15.0 (`lib/libsignal-service`, `core/network`, `core/util-jvm`, `core/models-jvm`).
-AGPL-3.0-only, personal use.
+It has a poll mode which will send notifications, and a manual mode, which requires 
+you to open the app and press "Check for messages".
+
+I personally use manual mode because notifications sometimes come in twice, once from 
+the watch app and once from the phone's app. (there's no easy workaround to this issue, I might try harder later).
+My main use-case is when I'm out of the house and my phone is left at home. In this 
+situation, notifications still get forwarded from my phone's signal app in the standard wearOS way.
+
+I am actually a real developer that can write real code with my own hands and brain,
+but this particular project is 99% Claude. 
+
+Happy for PRs and bug reports, I'll fix what I can.
 
 ## What it does
 
@@ -91,9 +99,6 @@ If the keystore is absent, debug falls back to the machine-local debug key.
 ~/Android/Sdk/emulator/emulator -avd wearos5 &
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
-
-The provisioning URL is also printed to logcat (`LinkingViewModel`) as a dev fallback
-if scanning the emulator screen is awkward.
 
 The Status screen has a debug chip to force the phone-connected state
 (auto / connected / away) for testing notification dedup without a paired phone.
