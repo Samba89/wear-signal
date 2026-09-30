@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
+import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.messages.EnvelopeProcessor
 import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.attachmentPlaceholder
@@ -60,6 +61,7 @@ class NotificationPresenter(private val context: Context) {
         ?.let { groupId -> GroupStateResolver.cachedTitle(groupId)?.let { "$sender @ $it" } ?: "$sender (group)" }
         ?: sender
       val notificationId = (message.sentAt % Int.MAX_VALUE).toInt() + index
+      val redactOnLock = AppDeps.account.lockscreenPrivacyEnabled
       val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_email)
         .setContentTitle(title)
@@ -69,6 +71,20 @@ class NotificationPresenter(private val context: Context) {
         .setAutoCancel(true)
         .setCategory(NotificationCompat.CATEGORY_MESSAGE)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+      if (redactOnLock) {
+        val publicVersion = NotificationCompat.Builder(context, CHANNEL_ID)
+          .setSmallIcon(android.R.drawable.ic_dialog_email)
+          .setContentTitle("Signal")
+          .setContentText("New message")
+          .setContentIntent(contentIntent)
+          .setAutoCancel(true)
+          .build()
+        builder.setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+        builder.setPublicVersion(publicVersion)
+      } else {
+        builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      }
 
       // Wear's native reply (voice/keyboard/canned) via RemoteInput; groups fan out on send.
       builder.addAction(buildReplyAction(message.peer, message.groupId != null, notificationId))

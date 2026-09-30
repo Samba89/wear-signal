@@ -34,6 +34,14 @@ class AvatarStore(context: Context) {
   /** The cached avatar for [key] (ACI or group id), or null if none is cached. */
   fun fileFor(key: String): File? = fileForKey(key).takeIf { it.exists() }
 
+  fun createTempFile(prefix: String = "avatar"): File =
+    File.createTempFile(prefix, ".tmp", dir)
+
+  fun clearAll() {
+    dir.deleteRecursively()
+    dir.mkdirs()
+  }
+
   /**
    * Downloads and caches the profile avatar at [avatarPath] for contact [aci].
    * A null/empty path clears the cache (contact removed their photo). Never throws.
@@ -45,7 +53,7 @@ class AvatarStore(context: Context) {
         return
       }
 
-      val encrypted = File.createTempFile("avatar", ".tmp", dir)
+      val encrypted = createTempFile("avatar")
       try {
         // downloadFromCdn appends, so the temp file must start empty (createTempFile guarantees it)
         AppDeps.net.authPushServiceSocket.retrieveProfileAvatar(avatarPath, encrypted, MAX_AVATAR_DOWNLOAD_BYTES)

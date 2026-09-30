@@ -19,7 +19,9 @@
         android:name=".WearSignalApp"
         android:label="WearSignal"
         android:icon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.DeviceDefault">
+        android:theme="@android:style/Theme.DeviceDefault"
+        android:allowBackup="false"
+        android:fullBackupContent="false">
 
         <uses-library
             android:name="com.google.android.wearable"

@@ -98,6 +98,11 @@ class AccountStore(context: Context) {
     get() = if (prefs.contains("phone_connected_override")) prefs.getBoolean("phone_connected_override", false) else null
     set(value) = prefs.edit { if (value == null) remove("phone_connected_override") else putBoolean("phone_connected_override", value) }
 
+  /** Whether to redact sender name and message content on the lock screen / off-wrist. */
+  var lockscreenPrivacyEnabled: Boolean
+    get() = prefs.getBoolean("lockscreen_privacy_enabled", true)
+    set(value) = prefs.edit { putBoolean("lockscreen_privacy_enabled", value) }
+
   fun clear() {
     prefs.edit { clear() }
   }

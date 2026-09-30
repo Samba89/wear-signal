@@ -99,7 +99,7 @@ object GroupStateResolver {
         return
       }
 
-      val encrypted = File.createTempFile("group-avatar", ".tmp")
+      val encrypted = AppDeps.avatars.createTempFile("group-avatar")
       try {
         AppDeps.net.authPushServiceSocket.retrieveGroupsV2ProfileAvatar(avatarPath, encrypted, MAX_AVATAR_DOWNLOAD_BYTES)
         val imageBytes = AppDeps.net.groupsV2Operations.forGroup(secretParams).decryptAvatar(encrypted.readBytes())

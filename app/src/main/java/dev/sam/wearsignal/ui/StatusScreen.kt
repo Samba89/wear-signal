@@ -31,6 +31,7 @@ fun StatusScreen() {
   var intervalMinutes by remember { mutableIntStateOf(account.pollIntervalMinutes) }
   var backgroundPolling by remember { mutableStateOf(account.backgroundPollingEnabled) }
   var readReceipts by remember { mutableStateOf(account.sendReadReceipts) }
+  var lockscreenPrivacy by remember { mutableStateOf(account.lockscreenPrivacyEnabled) }
   var override by remember { mutableStateOf(account.phoneConnectedOverride) }
 
   ScalingLazyColumn {
@@ -91,6 +92,18 @@ fun StatusScreen() {
         onClick = {
           readReceipts = !readReceipts
           account.sendReadReceipts = readReceipts
+        },
+        colors = ChipDefaults.secondaryChipColors(),
+        modifier = Modifier.fillMaxWidth()
+      )
+    }
+    item {
+      Chip(
+        label = { Text(if (lockscreenPrivacy) "Lock screen: Private" else "Lock screen: Show all") },
+        secondaryLabel = { Text(if (lockscreenPrivacy) "Hides name & message" else "Shows preview on lock") },
+        onClick = {
+          lockscreenPrivacy = !lockscreenPrivacy
+          account.lockscreenPrivacyEnabled = lockscreenPrivacy
         },
         colors = ChipDefaults.secondaryChipColors(),
         modifier = Modifier.fillMaxWidth()

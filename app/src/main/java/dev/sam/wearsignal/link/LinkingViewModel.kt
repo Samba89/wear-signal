@@ -85,7 +85,7 @@ class LinkingViewModel : ViewModel() {
       }
     ) { socket ->
       val url = socket.getProvisioningUrl()
-      Log.i(TAG, "Provisioning URL ready (socket ${socket.id}): $url")
+      Log.i(TAG, "Provisioning URL ready (socket ${socket.id})")
       store.update { current ->
         if (current is LinkState.Registering || current is LinkState.Done) current else LinkState.ShowingQr(url)
       }
