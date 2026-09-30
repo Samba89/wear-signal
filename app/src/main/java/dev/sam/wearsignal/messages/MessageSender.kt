@@ -36,10 +36,28 @@ object MessageSender {
   }
 
   /**
+   * Reacts to the message identified by ([targetAuthorAci], [targetSentAt]) — Signal's message
+   * key — with [emoji], or retracts our reaction when [remove]. Same fan-out as a text send.
+   */
+  fun sendReaction(
+    peer: String,
+    isGroup: Boolean,
+    targetAuthorAci: String,
+    targetSentAt: Long,
+    emoji: String,
+    remove: Boolean
+  ): Result {
+    val targetAuthor = ServiceId.parseOrNull(targetAuthorAci) ?: return Result.Failure("Bad target author")
+    val reaction = SignalServiceDataMessage.Reaction(emoji, remove, targetAuthor, targetSentAt)
+    return if (isGroup) sendToGroup(peer, body = null, reaction = reaction) else sendText(peer, body = null, reaction = reaction)
+  }
+
+  /**
    * Sends to [recipient], a ServiceId string — either a bare-UUID ACI (replies, known contacts) or a
    * "PNI:"-prefixed PNI (a contact discovered by number, whose ACI Signal won't reveal until first contact).
+   * The message carries [body], a [reaction], or both.
    */
-  fun sendText(recipient: String, body: String): Result {
+  fun sendText(recipient: String, body: String?, reaction: SignalServiceDataMessage.Reaction? = null): Result {
     if (!AppDeps.account.isLinked) return Result.Failure("Not linked")
 
     val serviceId = ServiceId.parseOrNull(recipient) ?: return Result.Failure("Bad recipient")
@@ -47,6 +65,7 @@ object MessageSender {
     val message = SignalServiceDataMessage.Builder()
       .withTimestamp(now)
       .withBody(body)
+      .withReaction(reaction)
       .build()
 
     val webSocket = AppDeps.net.authWebSocket
@@ -65,7 +84,7 @@ object MessageSender {
 
       if (result.isSuccess) {
         sendSyncTranscript(message, Optional.of(address), setOf(serviceId))
-        storeSent(peer = recipient, groupId = null, body = body, sentAt = now)
+        storeOwn(peer = recipient, groupId = null, body = body, reaction = reaction, sentAt = now)
         Log.i(TAG, "Message sent to ${recipient.take(12)}")
         Result.Success
       } else {
@@ -81,7 +100,7 @@ object MessageSender {
   }
 
   /** Sends to every cached member of [groupId] (pairwise fan-out with the groupV2 context). */
-  fun sendToGroup(groupId: String, body: String): Result {
+  fun sendToGroup(groupId: String, body: String?, reaction: SignalServiceDataMessage.Reaction? = null): Result {
     if (!AppDeps.account.isLinked) return Result.Failure("Not linked")
 
     val (masterKeyBytes, revision) = AppDeps.database.readableDatabase.rawQuery(
@@ -104,6 +123,7 @@ object MessageSender {
     val message = SignalServiceDataMessage.Builder()
       .withTimestamp(now)
       .withBody(body)
+      .withReaction(reaction)
       .asGroupMessage(groupContext)
       .build()
 
@@ -126,7 +146,7 @@ object MessageSender {
       val delivered = results.count { it.isSuccess }
       if (delivered > 0) {
         sendSyncTranscript(message, Optional.empty(), recipients.toSet())
-        storeSent(peer = groupId, groupId = groupId, body = body, sentAt = now)
+        storeOwn(peer = groupId, groupId = groupId, body = body, reaction = reaction, sentAt = now)
         Log.i(TAG, "Group message sent to $delivered/${results.size} member(s)")
         Result.Success
       } else {
@@ -161,15 +181,29 @@ object MessageSender {
     }
   }
 
-  private fun storeSent(peer: String, groupId: String?, body: String, sentAt: Long) {
-    AppDeps.messages.insert(
-      peer = peer,
-      senderAci = AppDeps.account.aci?.toString() ?: peer,
-      groupId = groupId,
-      body = body,
-      sentAt = sentAt,
-      serverAt = sentAt,
-      fromSelf = true
-    )
+  /** Records what we just sent: a message row for a text, a reaction row for a reaction. */
+  private fun storeOwn(peer: String, groupId: String?, body: String?, reaction: SignalServiceDataMessage.Reaction?, sentAt: Long) {
+    val selfAci = AppDeps.account.aci?.toString()
+    if (reaction != null) {
+      AppDeps.messages.applyReaction(
+        peer = peer,
+        targetSentAt = reaction.targetSentTimestamp,
+        targetAuthorAci = reaction.targetAuthor.toString(),
+        reacterAci = selfAci ?: return,
+        emoji = reaction.emoji,
+        remove = reaction.isRemove
+      )
+    }
+    if (body != null) {
+      AppDeps.messages.insert(
+        peer = peer,
+        senderAci = selfAci ?: peer,
+        groupId = groupId,
+        body = body,
+        sentAt = sentAt,
+        serverAt = sentAt,
+        fromSelf = true
+      )
+    }
   }
 }
