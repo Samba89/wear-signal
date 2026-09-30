@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,7 @@ fun WearSignalNavHost() {
   var polling by remember { mutableStateOf(false) }
   var pollCount by remember { mutableIntStateOf(0) } // bumped after each poll so screens reload
   var pollStatus by remember { mutableStateOf<String?>(null) } // error text when the last poll failed
+  val pollProgress by Poller.progress.collectAsState()
 
   fun pollNow() {
     if (polling) return
@@ -103,6 +105,7 @@ fun WearSignalNavHost() {
         conversations = conversations.take(limit),
         hasMore = conversations.size > limit,
         polling = polling,
+        pollProgress = pollProgress,
         pollStatus = pollStatus,
         onPoll = { pollNow() },
         onLoadMore = { limit += 10 },
@@ -139,6 +142,7 @@ fun WearSignalNavHost() {
         isGroup = conversation.isGroup,
         messages = messages,
         polling = polling,
+        pollProgress = pollProgress,
         pollStatus = pollStatus,
         onPoll = { pollNow() },
         onReply = { send(conversation.peer, conversation.isGroup, conversation.title) }

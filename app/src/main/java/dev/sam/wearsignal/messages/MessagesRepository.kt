@@ -54,7 +54,17 @@ class MessagesRepository(private val db: WatchDatabase) {
     fromSelf: Boolean,
     attachmentType: String? = null,
     attachmentPointer: ByteArray? = null
-  ) {
+  ): Boolean {
+    // Signal identifies a message by (sender, sent timestamp). An envelope the server
+    // redelivers because its ack was lost (e.g. the connection dropped mid-drain) must
+    // not become a second copy.
+    db.readableDatabase.rawQuery(
+      "SELECT 1 FROM messages WHERE peer = ? AND sender_aci = ? AND sent_at = ? LIMIT 1",
+      arrayOf(peer, senderAci, sentAt.toString())
+    ).use { cursor ->
+      if (cursor.moveToFirst()) return false
+    }
+
     val values = ContentValues().apply {
       put("peer", peer)
       put("sender_aci", senderAci)
@@ -75,6 +85,7 @@ class MessagesRepository(private val db: WatchDatabase) {
       """,
       arrayOf(peer, peer)
     )
+    return true
   }
 
   /**

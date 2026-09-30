@@ -35,7 +35,7 @@ class AttachmentStore(context: Context) {
    * Downloads any pending image attachments (bounded per run), then applies retention.
    * Call after a drain while the network is usable. Never throws.
    */
-  fun downloadPending() {
+  fun downloadPending(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
     val db = AppDeps.database.writableDatabase
     val cutoff = System.currentTimeMillis() - MAX_AGE_MS
 
@@ -55,7 +55,8 @@ class AttachmentStore(context: Context) {
       }
     }
 
-    for ((messageId, pointerBytes) in pending) {
+    pending.forEachIndexed { index, (messageId, pointerBytes) ->
+      onProgress(index + 1, pending.size)
       try {
         download(messageId, pointerBytes)
       } catch (t: Throwable) {
