@@ -2,6 +2,7 @@ package dev.sam.wearsignal.messages
 
 import dev.sam.wearsignal.AppDeps
 import org.signal.core.models.ServiceId
+import org.signal.core.models.ServiceId.ACI
 import org.signal.core.util.logging.Log
 import org.signal.libsignal.zkgroup.groups.GroupMasterKey
 import org.whispersystems.signalservice.api.SignalServiceMessageSender.IndividualSendEvents
@@ -10,6 +11,8 @@ import org.whispersystems.signalservice.api.crypto.ContentHint
 import org.whispersystems.signalservice.api.crypto.SealedSenderAccess
 import org.whispersystems.signalservice.api.messages.SignalServiceDataMessage
 import org.whispersystems.signalservice.api.messages.SignalServiceGroupV2
+import org.whispersystems.signalservice.api.messages.SignalServiceReceiptMessage
+import org.whispersystems.signalservice.api.messages.multidevice.ReadMessage
 import org.whispersystems.signalservice.api.messages.multidevice.SentTranscriptMessage
 import org.whispersystems.signalservice.api.messages.multidevice.SignalServiceSyncMessage
 import org.whispersystems.signalservice.api.push.SignalServiceAddress
@@ -156,6 +159,52 @@ object MessageSender {
     } catch (t: Throwable) {
       Log.w(TAG, "Group send failed", t)
       Result.Failure(t.message ?: "Send failed")
+    } finally {
+      webSocket.disconnect()
+    }
+  }
+
+  /**
+   * Announces that messages were read (their thread was opened on the watch): a read sync to
+   * our own devices so the phone clears its unread state, plus — only when [includeReceipts] —
+   * READ receipts to the message authors. Best-effort: the reads are already recorded locally,
+   * and a failure here just means the rest of Signal learns later (or, for receipts, never).
+   */
+  fun sendReadSignals(seen: List<SeenMessage>, includeReceipts: Boolean) {
+    if (seen.isEmpty() || !AppDeps.account.isLinked) return
+
+    // Incoming senders are always ACIs (PNI-sourced envelopes are dropped), but stay safe.
+    val bySender: Map<ACI, List<Long>> = seen
+      .mapNotNull { message -> ACI.parseOrNull(message.senderAci)?.let { it to message.sentAt } }
+      .groupBy({ it.first }, { it.second })
+    if (bySender.isEmpty()) return
+
+    val webSocket = AppDeps.net.authWebSocket
+    try {
+      webSocket.connect()
+      try {
+        val reads = bySender.flatMap { (sender, timestamps) -> timestamps.map { ReadMessage(sender, it) } }
+        AppDeps.net.messageSender.sendSyncMessage(SignalServiceSyncMessage.forRead(reads))
+      } catch (t: Throwable) {
+        Log.w(TAG, "Read sync failed; other devices will keep these unread", t)
+      }
+      if (includeReceipts) {
+        val now = System.currentTimeMillis()
+        for ((sender, timestamps) in bySender) {
+          try {
+            AppDeps.net.messageSender.sendReceipt(
+              SignalServiceAddress(sender),
+              null, // authenticated send, no sealed sender
+              SignalServiceReceiptMessage(SignalServiceReceiptMessage.Type.READ, timestamps, now),
+              false // includePniSignature
+            )
+          } catch (t: Throwable) {
+            Log.w(TAG, "Read receipt to ${sender.toString().take(8)} failed", t)
+          }
+        }
+      }
+    } catch (t: Throwable) {
+      Log.w(TAG, "Read signals failed", t)
     } finally {
       webSocket.disconnect()
     }

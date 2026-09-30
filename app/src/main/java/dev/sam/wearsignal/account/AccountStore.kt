@@ -84,6 +84,15 @@ class AccountStore(context: Context) {
     get() = prefs.getBoolean("background_polling_enabled", false)
     set(value) = prefs.edit { putBoolean("background_polling_enabled", value) }
 
+  /**
+   * Whether reading a thread on the watch sends READ receipts to the senders. Off by default:
+   * the watch can't see the account's read-receipts privacy setting, so it stays silent until
+   * the user opts in here. Read syncs to our own devices are always sent regardless.
+   */
+  var sendReadReceipts: Boolean
+    get() = prefs.getBoolean("send_read_receipts", false)
+    set(value) = prefs.edit { putBoolean("send_read_receipts", value) }
+
   /** Debug override: pretend the phone is connected/disconnected. null = use real NodeClient state. */
   var phoneConnectedOverride: Boolean?
     get() = if (prefs.contains("phone_connected_override")) prefs.getBoolean("phone_connected_override", false) else null
