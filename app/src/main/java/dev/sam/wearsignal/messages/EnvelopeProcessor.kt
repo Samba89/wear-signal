@@ -139,6 +139,16 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       )
     }
 
+    content.syncMessage?.let { sync ->
+      // Read/viewed markers from our other devices (e.g. the message was read on the
+      // phone): those incoming messages are no longer unread on the watch either.
+      val markers = sync.read.map { ServiceId.parseOrNull(it.senderAci, it.senderAciBinary) to it.timestamp } +
+        sync.viewed.map { ServiceId.parseOrNull(it.senderAci, it.senderAciBinary) to it.timestamp }
+      if (markers.isNotEmpty()) {
+        markSeenFromSync(markers)
+      }
+    }
+
     content.syncMessage?.sent?.let { sent ->
       val data = sent.message ?: return null
       val body = data.body
@@ -231,6 +241,26 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
 
     if (messages.mergePniIntoAci(pni.toString(), sender.toString())) {
       Log.i(TAG, "Merged PNI conversation into ACI thread of ${sender.toString().take(8)}")
+    }
+  }
+
+  /** Applies synced read/viewed markers: (sender, sent timestamp) pairs identify the messages. */
+  private fun markSeenFromSync(markers: List<Pair<ServiceId?, Long?>>) {
+    val db = AppDeps.database.writableDatabase
+    val now = System.currentTimeMillis()
+    for ((sender, timestamp) in markers) {
+      if (timestamp == null) continue
+      if (sender != null) {
+        db.execSQL(
+          "UPDATE messages SET seen_at = ? WHERE from_self = 0 AND seen_at = 0 AND sent_at = ? AND sender_aci = ?",
+          arrayOf(now, timestamp, sender.toString())
+        )
+      } else {
+        db.execSQL(
+          "UPDATE messages SET seen_at = ? WHERE from_self = 0 AND seen_at = 0 AND sent_at = ?",
+          arrayOf(now, timestamp)
+        )
+      }
     }
   }
 

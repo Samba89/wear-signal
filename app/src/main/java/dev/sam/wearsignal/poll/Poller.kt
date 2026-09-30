@@ -3,6 +3,7 @@ package dev.sam.wearsignal.poll
 import dev.sam.wearsignal.AppDeps
 import dev.sam.wearsignal.messages.GroupStateResolver
 import dev.sam.wearsignal.messages.ProfileNameResolver
+import dev.sam.wearsignal.tile.Glanceables
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,6 +87,8 @@ object Poller {
     if (!silent) {
       AppDeps.notifier.notify(newMessages) { aci -> resolveName(aci) }
     }
+
+    Glanceables.requestUpdate(AppDeps.context)
 
     return if (drained.incomplete) {
       Result.Failure("More waiting — check again")

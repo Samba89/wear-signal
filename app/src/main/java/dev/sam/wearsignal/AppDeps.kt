@@ -23,6 +23,10 @@ object AppDeps {
     appContext = context.applicationContext
   }
 
+  /** For components without their own Context (e.g. Poller pushing tile/complication updates). */
+  val context: Context
+    get() = appContext
+
   val account: AccountStore by lazy { AccountStore(appContext) }
   val database: WatchDatabase by lazy { WatchDatabase(appContext) }
   val net: SignalNet by lazy { SignalNet(appContext, account) }

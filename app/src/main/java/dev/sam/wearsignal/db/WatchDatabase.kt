@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 6) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 7) {
 
   override fun onCreate(db: SQLiteDatabase) {
     createDirectoryTable(db)
@@ -107,7 +107,8 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         read_at INTEGER NOT NULL DEFAULT 0,
         attachment_type TEXT,
         attachment_pointer BLOB,
-        attachment_path TEXT
+        attachment_path TEXT,
+        seen_at INTEGER NOT NULL DEFAULT 0
       )
       """
     )
@@ -154,6 +155,13 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
       db.execSQL("ALTER TABLE messages ADD COLUMN attachment_type TEXT")
       db.execSQL("ALTER TABLE messages ADD COLUMN attachment_pointer BLOB")
       db.execSQL("ALTER TABLE messages ADD COLUMN attachment_path TEXT")
+    }
+    if (oldVersion < 7) {
+      // When an incoming message stopped being unread: read on the phone (synced via
+      // SyncMessage.read/viewed) or its thread viewed here. Existing rows start seen
+      // so the upgrade doesn't declare the whole history unread.
+      db.execSQL("ALTER TABLE messages ADD COLUMN seen_at INTEGER NOT NULL DEFAULT 0")
+      db.execSQL("UPDATE messages SET seen_at = ${System.currentTimeMillis()} WHERE from_self = 0")
     }
   }
 

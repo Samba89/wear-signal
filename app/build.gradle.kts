@@ -152,4 +152,8 @@ dependencies {
   implementation(libs.playservices.wearable)
   implementation(libs.zxing.core)
   implementation(libs.work.runtime)
+  implementation(libs.wear.tiles)
+  implementation(libs.wear.protolayout)
+  implementation(libs.watchface.complications.datasource.ktx)
+  implementation(libs.androidx.concurrent.futures)
 }
