@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
@@ -43,8 +44,10 @@ import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
+import dev.sam.wearsignal.R
 import dev.sam.wearsignal.messages.MessageRow
 import dev.sam.wearsignal.messages.attachmentPlaceholder
 import java.text.DateFormat
@@ -73,6 +76,7 @@ fun ThreadScreen(
   pollStatus: String?,
   onPoll: () -> Unit,
   onReply: () -> Unit,
+  onRecordVoice: () -> Unit,
   onReact: (MessageRow, String) -> Unit,
   onReactCustom: (MessageRow) -> Unit
 ) {
@@ -136,11 +140,23 @@ fun ThreadScreen(
       item {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
           Chip(
-            label = { Text("Reply") },
+            label = { Text("Reply", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
             onClick = onReply,
             colors = ChipDefaults.primaryChipColors(),
             modifier = Modifier.weight(1f)
           )
+          Spacer(modifier = Modifier.width(4.dp))
+          Button(
+            onClick = onRecordVoice,
+            colors = ButtonDefaults.secondaryButtonColors(),
+            modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+          ) {
+            Icon(
+              painter = painterResource(R.drawable.ic_mic),
+              contentDescription = "Record voice message",
+              modifier = Modifier.size(18.dp)
+            )
+          }
           Spacer(modifier = Modifier.width(4.dp))
           Button(
             onClick = onPoll,
@@ -260,11 +276,33 @@ private fun ReceiptCircles(delivered: Boolean, read: Boolean, color: Color, knoc
   }
 }
 
-/** The image when downloaded, otherwise a placeholder ("📷 Photo…" until the next poll fetches it). */
+/**
+ * The image or an audio player when downloaded, otherwise a placeholder ("📷 Photo…" /
+ * "🎤 Voice message…" until the next poll fetches it).
+ */
 @Composable
 private fun AttachmentContent(message: MessageRow, contentColor: Color, modifier: Modifier) {
   val path = message.attachmentPath
-  val bitmap = remember(path) { path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }
+  val type = message.attachmentType
+  val isImage = type?.startsWith("image/") == true
+  val isAudio = type?.startsWith("audio/") == true
+
+  if (isAudio && path != null) {
+    Column(modifier = modifier.padding(bottom = if (message.body.isNotEmpty()) 3.dp else 0.dp)) {
+      if (!message.attachmentVoice) {
+        // Shared audio files get a label; voice notes are obvious from the player alone.
+        Text(
+          text = attachmentPlaceholder(type),
+          style = MaterialTheme.typography.caption3,
+          color = contentColor.copy(alpha = 0.7f)
+        )
+      }
+      VoiceNotePlayer(path = path, contentColor = contentColor)
+    }
+    return
+  }
+
+  val bitmap = remember(path) { if (isImage) path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } else null }
 
   if (bitmap != null) {
     Image(
@@ -278,7 +316,7 @@ private fun AttachmentContent(message: MessageRow, contentColor: Color, modifier
     )
   } else {
     Text(
-      text = attachmentPlaceholder(message.attachmentType) + if (message.attachmentType?.startsWith("image/") == true) "…" else "",
+      text = attachmentPlaceholder(type, message.attachmentVoice) + if (isImage || isAudio) "…" else "",
       style = MaterialTheme.typography.body2,
       color = contentColor.copy(alpha = 0.7f),
       modifier = modifier

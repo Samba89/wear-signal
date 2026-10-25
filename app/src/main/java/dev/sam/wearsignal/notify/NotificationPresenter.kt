@@ -65,7 +65,7 @@ class NotificationPresenter(private val context: Context) {
       val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(android.R.drawable.ic_dialog_email)
         .setContentTitle(title)
-        .setContentText(message.body.ifEmpty { attachmentPlaceholder(message.attachmentType) })
+        .setContentText(message.body.ifEmpty { attachmentPlaceholder(message.attachmentType, message.attachmentVoice) })
         .setWhen(message.sentAt)
         .setContentIntent(contentIntent)
         .setAutoCancel(true)

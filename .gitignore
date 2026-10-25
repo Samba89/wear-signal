@@ -6,3 +6,5 @@ local.properties
 .kotlin/
 captures/
 keystore/
+app/release/
+.claude/

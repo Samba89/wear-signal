@@ -19,6 +19,7 @@ import org.whispersystems.signalservice.api.crypto.SignalGroupSessionBuilder
 import org.whispersystems.signalservice.api.crypto.SignalServiceCipher
 import org.whispersystems.signalservice.api.crypto.SignalServiceCipherResult
 import org.whispersystems.signalservice.api.push.SignalServiceAddress
+import org.whispersystems.signalservice.internal.push.AttachmentPointer
 import org.whispersystems.signalservice.internal.push.Content
 import org.whispersystems.signalservice.internal.push.DataMessage
 import org.whispersystems.signalservice.internal.push.Envelope
@@ -34,6 +35,10 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
 
   companion object {
     private val TAG = Log.tag(EnvelopeProcessor::class)
+
+    /** Voice notes carry the VOICE_MESSAGE flag; other audio (shared files) doesn't. */
+    private fun AttachmentPointer?.isVoiceNote(): Boolean =
+      this != null && ((flags ?: 0) and AttachmentPointer.Flags.VOICE_MESSAGE.value) != 0
   }
 
   private val certificateValidator: CertificateValidator by lazy {
@@ -56,7 +61,9 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
     /** Content type of the first attachment, if any (downloaded later when it's an image). */
     val attachmentType: String? = null,
     /** Serialized AttachmentPointer proto for the first attachment. */
-    val attachmentPointer: ByteArray? = null
+    val attachmentPointer: ByteArray? = null,
+    /** Whether the first attachment is a voice note (AttachmentPointer VOICE_MESSAGE flag). */
+    val attachmentVoice: Boolean = false
   )
 
   fun process(envelope: Envelope, serverDeliveredTimestamp: Long): IncomingMessage? {
@@ -140,7 +147,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
         sentAt = data.timestamp ?: envelope.clientTimestamp ?: serverDeliveredTimestamp,
         fromSelf = false,
         attachmentType = attachment?.contentType,
-        attachmentPointer = attachment?.encode()
+        attachmentPointer = attachment?.encode(),
+        attachmentVoice = attachment.isVoiceNote()
       )
     }
 
@@ -185,7 +193,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
         sentAt = sent.timestamp ?: serverDeliveredTimestamp,
         fromSelf = true,
         attachmentType = attachment?.contentType,
-        attachmentPointer = attachment?.encode()
+        attachmentPointer = attachment?.encode(),
+        attachmentVoice = attachment.isVoiceNote()
       )
     }
 
@@ -203,7 +212,8 @@ class EnvelopeProcessor(private val messages: MessagesRepository) {
       serverAt = System.currentTimeMillis(),
       fromSelf = message.fromSelf,
       attachmentType = message.attachmentType,
-      attachmentPointer = message.attachmentPointer
+      attachmentPointer = message.attachmentPointer,
+      attachmentVoice = message.attachmentVoice
     )
   }
 

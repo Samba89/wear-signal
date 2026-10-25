@@ -10,9 +10,10 @@ import org.whispersystems.signalservice.api.util.AttachmentPointerUtil
 import java.io.File
 
 /**
- * Image attachments, sized for the watch: originals are downloaded from the CDN,
- * decrypted, downscaled to [TARGET_SIZE_PX], and stored as one JPEG per message
- * (~100KB each — the original is never kept).
+ * Image and audio attachments, one file per message (`att_<id>.<ext>`). Images are
+ * downloaded from the CDN, decrypted, downscaled to [TARGET_SIZE_PX], and stored as
+ * JPEG (~100KB each — the original is never kept). Audio (voice notes and other audio)
+ * is stored decrypted as sent, for MediaPlayer to play directly.
  *
  * Retention: files older than [MAX_AGE_MS] are deleted, and the directory is capped
  * at [MAX_TOTAL_BYTES] (oldest deleted first). Downloads are retried on each poll
@@ -32,7 +33,7 @@ class AttachmentStore(context: Context) {
   private val dir = File(context.filesDir, "attachments").apply { mkdirs() }
 
   /**
-   * Downloads any pending image attachments (bounded per run), then applies retention.
+   * Downloads any pending image/audio attachments (bounded per run), then applies retention.
    * Call after a drain while the network is usable. Never throws.
    */
   fun downloadPending(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
@@ -41,7 +42,7 @@ class AttachmentStore(context: Context) {
 
     // Expire pointers we'll never download: too old, or a type we don't render.
     db.execSQL(
-      "UPDATE messages SET attachment_pointer = NULL WHERE attachment_pointer IS NOT NULL AND (sent_at < ? OR attachment_type IS NULL OR attachment_type NOT LIKE 'image/%')",
+      "UPDATE messages SET attachment_pointer = NULL WHERE attachment_pointer IS NOT NULL AND (sent_at < ? OR attachment_type IS NULL OR (attachment_type NOT LIKE 'image/%' AND attachment_type NOT LIKE 'audio/%'))",
       arrayOf(cutoff)
     )
 
@@ -87,6 +88,16 @@ class AttachmentStore(context: Context) {
       )
       stream.use { input -> decrypted.outputStream().use { input.copyTo(it) } }
 
+      val contentType = pointer.contentType.orEmpty()
+      if (contentType.startsWith("audio/")) {
+        val file = File(dir, "att_$messageId.${audioExtension(contentType)}")
+        if (!decrypted.renameTo(file)) {
+          decrypted.copyTo(file, overwrite = true)
+        }
+        recordDownloaded(messageId, file)
+        return
+      }
+
       val bitmap = decodeDownscaled(decrypted)
       if (bitmap == null) {
         Log.w(TAG, "Attachment for message $messageId did not decode as an image; dropping")
@@ -98,16 +109,38 @@ class AttachmentStore(context: Context) {
       file.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out) }
       bitmap.recycle()
 
-      AppDeps.database.writableDatabase.execSQL(
-        "UPDATE messages SET attachment_path = ?, attachment_pointer = NULL WHERE _id = ?",
-        arrayOf(file.path, messageId)
-      )
-      Log.i(TAG, "Downloaded attachment for message $messageId (${file.length() / 1024} KB)")
+      recordDownloaded(messageId, file)
     } finally {
       encrypted.delete()
       decrypted.delete()
     }
   }
+
+  private fun recordDownloaded(messageId: Long, file: File) {
+    AppDeps.database.writableDatabase.execSQL(
+      "UPDATE messages SET attachment_path = ?, attachment_pointer = NULL WHERE _id = ?",
+      arrayOf(file.path, messageId)
+    )
+    Log.i(TAG, "Downloaded attachment for message $messageId (${file.length() / 1024} KB)")
+  }
+
+  /**
+   * File extension for a stored audio attachment. Cosmetic: MediaPlayer sniffs the
+   * container, so an unknown type still plays if the platform supports it.
+   */
+  private fun audioExtension(contentType: String): String =
+    when (contentType.substringBefore(';').trim().lowercase()) {
+      "audio/aac", "audio/x-aac" -> "aac"
+      "audio/mp4", "audio/m4a", "audio/x-m4a", "audio/mp4a-latm" -> "m4a"
+      "audio/mpeg", "audio/mp3" -> "mp3"
+      "audio/ogg", "audio/opus" -> "ogg"
+      "audio/wav", "audio/x-wav", "audio/wave" -> "wav"
+      "audio/amr" -> "amr"
+      "audio/3gpp" -> "3gp"
+      "audio/webm" -> "webm"
+      "audio/flac" -> "flac"
+      else -> "audio"
+    }
 
   private fun clearPointer(messageId: Long) {
     AppDeps.database.writableDatabase.execSQL(

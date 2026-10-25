@@ -42,10 +42,11 @@ Happy for PRs and bug reports, I'll fix what I can.
   45-day linked-device inactivity deadline) and runs prekey upkeep — regardless of the
   toggle, with zero wearing-time battery cost.
 - **Manual poll**: "Check for messages" in the conversation list, silent.
-- **Images (receive-only)**: image attachments are downloaded during polls, decrypted,
-  downscaled to watch resolution (~100KB each; originals never kept), shown inline in
-  threads. Retention: 7 days and a 64MB cap, oldest deleted first. Other attachment
-  types show as a placeholder.
+- **Images and voice messages (receive)**: image and audio attachments are downloaded
+  during polls and decrypted. Images are downscaled to watch resolution (~100KB each;
+  originals never kept) and shown inline in threads; voice notes and other audio are kept
+  as sent and play inline (play/pause, progress, duration). Retention: 7 days and a 64MB
+  cap shared by both, oldest deleted first. Other attachment types show as a placeholder.
 - Delivery/read ticks on sent messages; no typing indicators; no sending of
   attachments or read receipts.
 

@@ -25,8 +25,10 @@ data class MessageRow(
   val read: Boolean = false,
   /** Content type of the attachment, when the message has one. */
   val attachmentType: String? = null,
-  /** Local file of the downloaded (downscaled) image, when available. */
+  /** Local file of the downloaded attachment (downscaled image or audio as sent), when available. */
   val attachmentPath: String? = null,
+  /** Whether the attachment is a voice note (vs. other audio or a file). */
+  val attachmentVoice: Boolean = false,
   /** Emoji reactions to this message, grouped per emoji, most-used first. */
   val reactions: List<MessageReaction> = emptyList()
 ) {
@@ -40,9 +42,16 @@ data class MessageReaction(val emoji: String, val count: Int, val mine: Boolean)
 /** An incoming message newly marked seen: its author and sent timestamp (Signal's message key). */
 data class SeenMessage(val senderAci: String, val sentAt: Long)
 
-/** Placeholder body text for attachment messages ("📷 Photo" / "📎 Attachment"). */
-fun attachmentPlaceholder(contentType: String?): String =
-  if (contentType?.startsWith("image/") == true) "📷 Photo" else "📎 Attachment"
+/**
+ * Placeholder body text for attachment messages: "📷 Photo", "🎤 Voice message" ([voice]
+ * set), "🎵 Audio", or "📎 Attachment".
+ */
+fun attachmentPlaceholder(contentType: String?, voice: Boolean = false): String = when {
+  contentType?.startsWith("image/") == true -> "📷 Photo"
+  voice -> "🎤 Voice message"
+  contentType?.startsWith("audio/") == true -> "🎵 Audio"
+  else -> "📎 Attachment"
+}
 
 /**
  * Stores and reads decrypted messages, grouped into conversations by peer
@@ -64,7 +73,8 @@ class MessagesRepository(private val db: WatchDatabase) {
     serverAt: Long,
     fromSelf: Boolean,
     attachmentType: String? = null,
-    attachmentPointer: ByteArray? = null
+    attachmentPointer: ByteArray? = null,
+    attachmentVoice: Boolean = false
   ): Boolean {
     // Signal identifies a message by (sender, sent timestamp). An envelope the server
     // redelivers because its ack was lost (e.g. the connection dropped mid-drain) must
@@ -86,6 +96,7 @@ class MessagesRepository(private val db: WatchDatabase) {
       put("from_self", if (fromSelf) 1 else 0)
       put("attachment_type", attachmentType)
       put("attachment_pointer", attachmentPointer)
+      put("attachment_voice", if (attachmentVoice) 1 else 0)
     }
     db.writableDatabase.insert("messages", null, values)
     db.writableDatabase.execSQL(
@@ -159,7 +170,7 @@ class MessagesRepository(private val db: WatchDatabase) {
     db.readableDatabase.rawQuery(
       """
       SELECT m.peer, m.group_id IS NOT NULL, m.body, MAX(m.sent_at) AS last_at, m.from_self,
-             g.title, c.name, sc.name, m.sender_aci, m.attachment_type
+             g.title, c.name, sc.name, m.sender_aci, m.attachment_type, m.attachment_voice
       FROM messages m
       LEFT JOIN groups g ON g.group_id = m.peer
       LEFT JOIN contacts c ON c.aci = m.peer
@@ -187,7 +198,9 @@ class MessagesRepository(private val db: WatchDatabase) {
             else -> contactName ?: peer.take(8)
           },
           isGroup = isGroup,
-          lastBody = body.ifEmpty { if (attachmentType != null) attachmentPlaceholder(attachmentType) else body },
+          lastBody = body.ifEmpty {
+            if (attachmentType != null) attachmentPlaceholder(attachmentType, voice = cursor.getInt(10) == 1) else body
+          },
           lastAt = cursor.getLong(3),
           lastFromSelf = fromSelf,
           lastSender = if (fromSelf) "Me" else senderName ?: senderAci.take(8)
@@ -278,7 +291,7 @@ class MessagesRepository(private val db: WatchDatabase) {
     db.readableDatabase.rawQuery(
       """
       SELECT m.sender_aci, m.body, m.sent_at, m.from_self, c.name, m.delivered_at, m.read_at,
-             m.attachment_type, m.attachment_path
+             m.attachment_type, m.attachment_path, m.attachment_voice
       FROM messages m LEFT JOIN contacts c ON c.aci = m.sender_aci
       WHERE m.peer = ?
       ORDER BY m.sent_at ASC
@@ -304,6 +317,7 @@ class MessagesRepository(private val db: WatchDatabase) {
           read = cursor.getLong(6) > 0,
           attachmentType = if (cursor.isNull(7)) null else cursor.getString(7),
           attachmentPath = if (cursor.isNull(8)) null else cursor.getString(8),
+          attachmentVoice = cursor.getInt(9) == 1,
           reactions = reactionsByTarget[sentAt to senderAci] ?: emptyList()
         )
       }

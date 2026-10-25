@@ -62,6 +62,7 @@ fun WearSignalNavHost() {
   var polling by remember { mutableStateOf(false) }
   var pollCount by remember { mutableIntStateOf(0) } // bumped after each poll so screens reload
   var pollStatus by remember { mutableStateOf<String?>(null) } // error text when the last poll failed
+  var voiceSentCount by remember { mutableIntStateOf(0) } // bumped after a voice note is sent so the thread reloads
   val pollProgress by Poller.progress.collectAsState()
 
   fun pollNow() {
@@ -126,7 +127,7 @@ fun WearSignalNavHost() {
       var messages by remember { mutableStateOf(listOf<MessageRow>()) }
       var refreshKey by remember { mutableIntStateOf(0) }
       val context = LocalContext.current
-      LaunchedEffect(refreshKey, pollCount) {
+      LaunchedEffect(refreshKey, pollCount, voiceSentCount) {
         val newlySeen = withContext(Dispatchers.IO) {
           messages = AppDeps.messages.thread(conversation.peer, AppDeps.account.aci?.toString())
           // Viewing the thread counts as reading: clear these from the tile/complication unread count.
@@ -170,8 +171,26 @@ fun WearSignalNavHost() {
         pollStatus = pollStatus,
         onPoll = { pollNow() },
         onReply = { send(conversation.peer, conversation.isGroup, conversation.title) },
+        onRecordVoice = { navController.navigate("voice") },
         onReact = ::react,
         onReactCustom = pickEmoji
+      )
+    }
+    composable("voice") {
+      // Same conversation as the thread underneath (peer held in state, not the route).
+      val conversation = openConversation
+      if (conversation == null) {
+        navController.popBackStack()
+        return@composable
+      }
+      VoiceRecordScreen(
+        title = conversation.title,
+        peer = conversation.peer,
+        isGroup = conversation.isGroup,
+        onSent = {
+          voiceSentCount++
+          navController.popBackStack()
+        }
       )
     }
     composable("compose") {

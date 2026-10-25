@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Read the watch's synced contacts to offer them as message recipients (resolved to Signal accounts via CDSI). -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Record voice messages (requested at runtime from the record screen). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:name=".WearSignalApp"

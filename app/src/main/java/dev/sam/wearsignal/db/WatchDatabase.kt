@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
  * Single SQLite database holding the Signal protocol stores (per account identity: "aci"/"pni"),
  * received messages, and the contact-name cache.
  */
-class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 8) {
+class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db", null, 9) {
 
   override fun onCreate(db: SQLiteDatabase) {
     createDirectoryTable(db)
@@ -109,7 +109,8 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
         attachment_type TEXT,
         attachment_pointer BLOB,
         attachment_path TEXT,
-        seen_at INTEGER NOT NULL DEFAULT 0
+        seen_at INTEGER NOT NULL DEFAULT 0,
+        attachment_voice INTEGER NOT NULL DEFAULT 0
       )
       """
     )
@@ -166,6 +167,12 @@ class WatchDatabase(context: Context) : SQLiteOpenHelper(context, "wearsignal.db
     }
     if (oldVersion < 8) {
       createReactionsTable(db)
+    }
+    if (oldVersion < 9) {
+      // Whether the attachment is a voice note (AttachmentPointer VOICE_MESSAGE flag), so it
+      // shows as "🎤 Voice message" rather than generic audio. Kept as its own column because
+      // the pointer is dropped once the download succeeds.
+      db.execSQL("ALTER TABLE messages ADD COLUMN attachment_voice INTEGER NOT NULL DEFAULT 0")
     }
   }
 

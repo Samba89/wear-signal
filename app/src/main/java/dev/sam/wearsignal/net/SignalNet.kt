@@ -128,6 +128,8 @@ class SignalNet(context: Context, private val account: AccountStore) {
 
   val messageApi: MessageApi by lazy { MessageApi(authWebSocket, unauthWebSocket) }
 
+  val attachmentApi: AttachmentApi by lazy { AttachmentApi(authWebSocket, authPushServiceSocket) }
+
   val groupsV2Operations: GroupsV2Operations by lazy {
     GroupsV2Operations(ClientZkOperations.create(configuration), 1001) // max group size per Signal's default remote config
   }
